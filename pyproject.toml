@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+fallback_version = "0.0"
+
+[project]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+name = "nomad-distribution"
+description = "nomad distribution template"
+dynamic = ["version"]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+  "nomad-lab[infrastructure]>=1.4.1",
+]
+
+
+[project.urls]
+repository = "https://github.com/FAIRmat-NFDI/nomad-distro-template"
+
+[project.optional-dependencies]
+# Add your plugins to the list below.
+plugins = []
+jupyter = ["jupyter-events"]
+gpu-action = []
+cpu-action = []
+
+dev = ["nomad-lab[infrastructure, dev]"]
+
+[tool.uv]
+extra-index-url = [
+  "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple",
+]
+prerelease = "explicit"
+# https://github.com/gmr/flatdict/issues/60
+extra-build-dependencies = { flatdict = ["setuptools<82.0.0"] }
+
+[tool.setuptools.packages.find]
+exclude = ["gui*", "docs*", "config*"]
