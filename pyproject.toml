@@ -21,8 +21,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
-  "nomad-lab[infrastructure]>=1.4.1",
+  "nomad-lab[parsing, infrastructure]==1.4.1",
   "pdi-nomad-plugin-rheed @ git+https://github.com/glaidedata/pdi-nomad-plugin-rheed.git@v0.1.0",
+  
 ]
 
 
@@ -36,7 +37,7 @@ jupyter = ["jupyter-events"]
 gpu-action = []
 cpu-action = []
 
-dev = ["nomad-lab[infrastructure, dev]"]
+dev = ["nomad-lab[parsing, infrastructure, dev]==1.4.1"]
 
 [tool.uv]
 extra-index-url = [

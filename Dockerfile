@@ -89,6 +89,20 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --extra plugins
 
+ARG NOMAD_DISTRO_REPO="https://gitlab.mpcdf.mpg.de/nomad-lab/nomad-distro.git"
+ARG NOMAD_DISTRO_REPO_FALLBACK="https://github.com/FAIRmat-NFDI/nomad-distro.git"
+ARG NOMAD_DISTRO_REPO_REF="main"
+
+RUN set -ex && \
+    echo "Cloning core example data from: ${NOMAD_DISTRO_REPO}; ref: ${NOMAD_DISTRO_REPO_REF}" && \
+    (git clone --depth 1 --branch "${NOMAD_DISTRO_REPO_REF}" "${NOMAD_DISTRO_REPO}" /tmp/nomad-distro || \
+     git clone --depth 1 --branch "${NOMAD_DISTRO_REPO_REF}" "${NOMAD_DISTRO_REPO_FALLBACK}" /tmp/nomad-distro) && \
+    mkdir -p /app/examples /app/scripts && \
+    cp -r /tmp/nomad-distro/examples/data /app/examples/data && \
+    cp /tmp/nomad-distro/scripts/generate_example_uploads.sh /app/scripts/generate_example_uploads.sh && \
+    bash /app/scripts/generate_example_uploads.sh && \
+    rm -rf /tmp/nomad-distro
+
 
 COPY scripts ./scripts
 
@@ -98,6 +112,7 @@ WORKDIR /app
 
 ARG NOMAD_DOCS_REPO="https://github.com/FAIRmat-NFDI/nomad-docs.git"
 ARG NOMAD_DOCS_REPO_REF="main"
+ARG NOMAD_DOCS_PACKAGE="nomad-docs"
 
 RUN set -ex && \
     echo "Cloning from: ${NOMAD_DOCS_REPO}; branch: ${NOMAD_DOCS_REPO_REF}" && \
@@ -106,7 +121,7 @@ RUN set -ex && \
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv run --with nomad-docs --directory docs mkdocs build \
+    uv run --with "${NOMAD_DOCS_PACKAGE}" --directory docs mkdocs build \
     && mkdir -p built_docs \
     && cp -r docs/site/* built_docs
 
@@ -133,6 +148,7 @@ FROM base_final AS final
 ARG PYTHON_VERSION=3.12
 
 COPY --chown=nomad:${UID} --from=builder /opt/venv /opt/venv
+COPY --chown=nomad:${UID} --from=builder /app/examples/data /app/examples/data
 COPY --chown=nomad:${UID} scripts/run.sh .
 COPY --chown=nomad:${UID} scripts/run-worker.sh .
 COPY configs/nomad.yaml nomad.yaml

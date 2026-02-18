@@ -2224,8 +2224,8 @@ jupyter = [
 [package.metadata]
 requires-dist = [
     { name = "jupyter-events", marker = "extra == 'jupyter'" },
-    { name = "nomad-lab", extras = ["dev", "infrastructure"], marker = "extra == 'dev'" },
-    { name = "nomad-lab", extras = ["infrastructure"], specifier = ">=1.4.1" },
+    { name = "nomad-lab", extras = ["dev", "infrastructure", "parsing"], marker = "extra == 'dev'", specifier = "==1.4.1" },
+    { name = "nomad-lab", extras = ["infrastructure", "parsing"], specifier = "==1.4.1" },
     { name = "pdi-nomad-plugin-rheed", git = "https://github.com/glaidedata/pdi-nomad-plugin-rheed.git?rev=v0.1.0" },
 ]
 provides-extras = ["plugins", "jupyter", "gpu-action", "cpu-action", "dev"]
