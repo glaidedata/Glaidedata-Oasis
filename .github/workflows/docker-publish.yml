@@ -165,8 +165,17 @@ jobs:
           # Strip local/dev suffixes, e.g. 1.4.2.dev43+g123 -> 1.4.2
           BASE_VERSION="${NOMAD_LAB_VERSION%%+*}"
           BASE_VERSION="${BASE_VERSION%%.dev*}"
-          echo "ref=v${BASE_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "package=nomad-docs==${BASE_VERSION}" >> "$GITHUB_OUTPUT"
+          DOCS_TAG="v${BASE_VERSION}"
+
+          if git ls-remote --exit-code --tags "${NOMAD_DOCS_REPO}" "refs/tags/${DOCS_TAG}" >/dev/null 2>&1; then
+            echo "ref=${DOCS_TAG}" >> "$GITHUB_OUTPUT"
+            # Prefer pinning docs python package to the same docs git ref.
+            echo "package=git+${NOMAD_DOCS_REPO}@${DOCS_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "nomad-docs tag ${DOCS_TAG} not found in ${NOMAD_DOCS_REPO}; falling back to unpinned nomad-docs package." >&2
+            echo "ref=${NOMAD_DOCS_REPO_REF}" >> "$GITHUB_OUTPUT"
+            echo "package=nomad-docs" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
