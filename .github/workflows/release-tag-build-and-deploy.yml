@@ -67,7 +67,7 @@ jobs:
 
     # This creates the approval button
     environment:
-      name: prod-vm
+      name: glaidedata-oasis-prod
 
     steps:
       - name: Write SSH key
