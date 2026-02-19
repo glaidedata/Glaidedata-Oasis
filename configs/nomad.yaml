@@ -11,6 +11,8 @@ oasis:
         - joseph.rudzinski@physik.hu-berlin.de
         - sebastian.brueckner@physik.hu-berlin.de
         - gholamia@mpip-mainz.mpg.de
+        - bierwagen@pdi-berlin.de
+        - hoffmann@pdi-berlin.de
 
 north:
   jupyterhub_crypt_key: "978bfb2e13a8448a253c629d8dd84ff89587f30e635b753153960930cad9d36d"
