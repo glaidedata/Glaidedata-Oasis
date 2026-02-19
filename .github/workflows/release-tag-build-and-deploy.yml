@@ -60,8 +60,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-
-deploy:
+  deploy:
     name: Deploy to VM (approve in GitHub)
     needs: build
     runs-on: ubuntu-latest
@@ -84,4 +83,3 @@ deploy:
               -p 22 \
               "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
               "${{ github.ref_name }}"
-
