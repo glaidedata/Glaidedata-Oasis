@@ -34,20 +34,7 @@ repository = "https://github.com/glaidedata/glaidedata-oasis"
 # Add your plugins to the list below.
 plugins = []
 jupyter = [
-'jupyter-events',
-'voila',
-'ipyaggrid',
-'ipyvuetify',
-'ipysheet',
-'ipydatagrid',
-'jupyter-flex',
-'ipympl',
-'ipython',
-'pyvis',
-'jupyterlab_h5web',
-'jupyterlab>4.0',
-'seaborn', 
-'jupyterlab-spreadsheet-editor'
+'jupyter-events'
 ]
 gpu-action = []
 cpu-action = []
