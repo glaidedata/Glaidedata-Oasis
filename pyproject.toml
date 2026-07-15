@@ -31,9 +31,22 @@ repository = "https://github.com/glaidedata/glaidedata-oasis"
 
 [project.optional-dependencies]
 # Add your plugins to the list below.
-plugins = []
+plugins = [
+  "nomad-baseclasses @ git+https://github.com/nomad-hzb/nomad-baseclasses.git",
+  "nomad-hysprint @ git+https://github.com/nomad-hzb/nomad-hysprint.git",
+  "nomad-gui==2.0.0a2.dev583"
+]
 jupyter = [
-'jupyter-events'
+  "jupyter-events",
+  "voila",
+  "ipyaggrid",
+  "ipyvuetify",
+  "ipysheet",
+  "ipydatagrid",
+  "jupyter-flex",
+  "ipympl",
+  "seaborn",
+  "jupyterlab>4.0"
 ]
 gpu-action = []
 cpu-action = []
