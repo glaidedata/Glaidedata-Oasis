@@ -95,8 +95,29 @@ jobs:
         env:
           PLUGIN_TESTS_CI_NODE_INDEX: ${{ matrix.group }}
         run: |
-          # replace the yaml list with a string, use a `,` to separate the plugins
-          PLUGINS_STRING=$(echo "$PLUGIN_TESTS_PLUGINS_TO_SKIP" | tr '\n' ',' | sed 's/,$//')
+          # Auto-detect packages in uv.lock that are hosted on GitLab
+          # and add them to PLUGIN_TESTS_PLUGINS_TO_SKIP so nomad-plugin-tests
+          # won't fail when a GitHub URL is required.
+          SKIP=$(python - <<'PY'
+import re
+skip=[]
+try:
+    with open('uv.lock') as f:
+        lines=f.readlines()
+    for i,l in enumerate(lines):
+        m=re.match(r"\s*name\s*=\s*\"([^\"]+)\"", l)
+        if m:
+            name=m.group(1)
+            window=''.join(lines[i+1:i+16]).lower()
+            if 'gitlab' in window:
+                skip.append(name.replace('-', '_'))
+except FileNotFoundError:
+    pass
+print(' '.join(skip))
+PY
+)
+          # convert newlines to commas (nomad-plugin-tests expects comma-separated)
+          PLUGINS_STRING=$(echo "$PLUGIN_TESTS_PLUGINS_TO_SKIP $SKIP" | tr '\n' ' ' | sed 's/^ *//;s/ *$//;s/  */ /g' | tr ' ' ',' | sed 's/^,//;s/,$//')
           uv run \
             --extra plugins \
             --with "nomad-plugin-tests" \
