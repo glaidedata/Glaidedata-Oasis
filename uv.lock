@@ -3115,7 +3115,7 @@ plugins = [
 [package.metadata]
 requires-dist = [
     { name = "jupyter-events", marker = "extra == 'jupyter'" },
-    { name = "nomad-gui", marker = "extra == 'plugins'", specifier = "==2.0.0a2.dev583" },
+    { name = "nomad-gui", marker = "extra == 'plugins'", specifier = "==2.0.0a2.dev583", index = "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple" },
     { name = "nomad-lab", extras = ["dev", "infrastructure", "parsing"], marker = "extra == 'dev'", specifier = "==1.4.3" },
     { name = "nomad-lab", extras = ["infrastructure", "parsing"], specifier = "==1.4.3" },
     { name = "pdi-nomad-plugin-rheed", marker = "extra == 'plugins'", git = "https://github.com/glaidedata/pdi-nomad-plugin-rheed.git?rev=v0.2.0" },

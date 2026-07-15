@@ -43,10 +43,17 @@ cpu-action = []
 dev = ["nomad-lab[parsing, infrastructure, dev]==1.4.3"]
 
 [tool.uv]
+index = [
+  { name = "nomad-lab", url = "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple" },
+]
+
 extra-index-url = [
   "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple",
 ]
 prerelease = "if-necessary-or-explicit"
+
+[tool.uv.sources]
+nomad-gui = { index = "nomad-lab" }
 
 [tool.setuptools.packages.find]
 exclude = ["gui*", "docs*", "config*"]
