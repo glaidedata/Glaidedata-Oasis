@@ -21,9 +21,7 @@ env:
   NOMAD_DOCS_REPO_REF: ""
   # If you want to skip the tests for some plugins, add them here as a single string where
   # each plugin is separated by whitespace
-  # keep `nomad_gui` skipped by default (GitLab-hosted package); additional
-  # packages hosted on GitLab will be auto-detected and appended at runtime.
-  PLUGIN_TESTS_PLUGINS_TO_SKIP: "nomad_gui"
+  PLUGIN_TESTS_PLUGINS_TO_SKIP: ""
 
 permissions:
   contents: write
@@ -96,34 +94,12 @@ jobs:
         env:
           PLUGIN_TESTS_CI_NODE_INDEX: ${{ matrix.group }}
         run: |
-          # Auto-detect packages in uv.lock that are hosted on GitLab and
-          # append them to the explicit skip list. The Python helper collects
-          # candidates and prints a space-separated list; shell merges them
-          # and de-duplicates before converting to a comma-separated string.
-          SKIP=$(python - <<'PY'
-    import re
-    names=set()
-    try:
-      with open('uv.lock') as f:
-        lines=f.readlines()
-      for i,l in enumerate(lines):
-        m=re.match(r"\s*name\s*=\s*\"([^\"]+)\"", l)
-        if m:
-          name=m.group(1).replace('-', '_')
-          window=''.join(lines[i+1:i+16]).lower()
-          if 'gitlab' in window:
-            names.add(name)
-    except FileNotFoundError:
-      pass
-    print(' '.join(sorted(names)))
-    PY
-    )
-          # merge, deduplicate and convert to comma-separated list
-          PLUGINS_STRING=$(printf "%s %s" "$PLUGIN_TESTS_PLUGINS_TO_SKIP" "$SKIP" | tr ' ' '\n' | awk 'NF' | sort -u | tr '\n' ',' | sed 's/,$//')
+          # replace the yaml list with a string, use a `,` to separate the plugins
+          PLUGINS_STRING=$(echo "$PLUGIN_TESTS_PLUGINS_TO_SKIP" | tr '\n' ',' | sed 's/,$//')
           uv run \
-          --extra plugins \
-          --with "nomad-plugin-tests" \
-          nomad-plugin-tests --plugins-to-skip "$PLUGINS_STRING"
+            --extra plugins \
+            --with "nomad-plugin-tests" \
+            nomad-plugin-tests --plugins-to-skip "$PLUGINS_STRING"
 
   # Job 3: Build and Push Docker Image
   build:
