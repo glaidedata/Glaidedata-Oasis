@@ -119,9 +119,9 @@ PY
           # convert newlines to commas (nomad-plugin-tests expects comma-separated)
           PLUGINS_STRING=$(echo "$PLUGIN_TESTS_PLUGINS_TO_SKIP $SKIP" | tr '\n' ' ' | sed 's/^ *//;s/ *$//;s/  */ /g' | tr ' ' ',' | sed 's/^,//;s/,$//')
           uv run \
-            --extra plugins \
-            --with "nomad-plugin-tests" \
-            nomad-plugin-tests --plugins-to-skip "$PLUGINS_STRING"
+          --extra plugins \
+          --with "nomad-plugin-tests" \
+          nomad-plugin-tests --plugins-to-skip "$PLUGINS_STRING"
 
   # Job 3: Build and Push Docker Image
   build:
