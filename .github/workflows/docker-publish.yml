@@ -21,8 +21,8 @@ env:
   NOMAD_DOCS_REPO_REF: ""
   # If you want to skip the tests for some plugins, add them here as a single string where
   # each plugin is separated by whitespace
-  # default to skipping nomad_gui (hosted on GitLab; nomad-plugin-tests expects GitHub URLs)
-  PLUGIN_TESTS_PLUGINS_TO_SKIP: "nomad_gui"
+  # no plugins are skipped by default; include plugin names only when needed
+  PLUGIN_TESTS_PLUGINS_TO_SKIP: ""
 
 permissions:
   contents: write
