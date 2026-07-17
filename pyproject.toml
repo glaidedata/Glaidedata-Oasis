@@ -32,7 +32,7 @@ repository = "https://github.com/glaidedata/glaidedata-oasis"
 # Add your plugins to the list below.
 plugins = [
   "pdi-nomad-plugin-rheed @ git+https://github.com/glaidedata/pdi-nomad-plugin-rheed.git@v0.2.0",
-  "nomad-gui==2.0.0a2.dev583",
+  "nomad-gui==2.0.0b1",
 ]
 jupyter = [
 'jupyter-events'
