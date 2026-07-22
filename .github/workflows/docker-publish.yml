@@ -4,8 +4,8 @@ name: Build and publish docker images
 on:
   push:
     branches: ["main"]
-    # Publish semver tags as releases.
-    tags: ["v*.*.*"]
+  release:
+    types: [published]
   pull_request:
     branches: ["main"]
   # Allows you to run this workflow manually from the Actions tab
@@ -148,6 +148,10 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}${{ matrix.image_suffix }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
@@ -225,3 +229,18 @@ jobs:
         run: |
           export PLUGINS_STRING=$(echo "$PLUGIN_TESTS_PLUGINS_TO_SKIP" | tr '\n' ',' | sed 's/,$//')
           uv run --extra plugins pytest -p no:warnings -sv
+
+  deploy_release:
+    name: Deploy release image to VM
+    needs:
+      - plugin_unit_tests
+      - run_tests
+    if: github.event_name == 'release'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/release-tag-build-and-deploy.yml
+    with:
+      mode: tag
+      tag: ${{ github.event.release.tag_name }}
+    secrets: inherit
