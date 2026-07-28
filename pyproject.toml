@@ -34,6 +34,7 @@ repository = "https://github.com/glaidedata/glaidedata-oasis"
 plugins = [
   "nomad-baseclasses @ git+https://github.com/nomad-hzb/nomad-baseclasses.git",
   "nomad-hysprint @ git+https://github.com/nomad-hzb/nomad-hysprint.git",
+  "nomad-north-voila @ git+https://github.com/FAIRmat-NFDI/nomad-north-voila.git",
   "nomad-gui==2.0.0a2.dev583"
 ]
 jupyter = [
@@ -59,7 +60,8 @@ extra-index-url = [
 ]
 prerelease = "explicit"
 # https://github.com/gmr/flatdict/issues/60
-extra-build-dependencies = { flatdict = ["setuptools<82.0.0"] }
+# extra-build-dependencies = { flatdict = ["setuptools<82.0.0"] }
 
 [tool.setuptools.packages.find]
 exclude = ["gui*", "docs*", "config*"]
+
