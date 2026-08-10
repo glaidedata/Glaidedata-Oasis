@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools-scm"]
+requires = ["setuptools>=82.0.1", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
@@ -21,8 +21,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
-  "nomad-lab[parsing, infrastructure]==1.4.2",
-  "pdi-nomad-plugin-rheed @ git+https://github.com/glaidedata/pdi-nomad-plugin-rheed.git@v0.2.0",
+  "nomad-lab[parsing, infrastructure]==1.4.3",
 ]
 
 
@@ -32,10 +31,11 @@ repository = "https://github.com/glaidedata/glaidedata-oasis"
 [project.optional-dependencies]
 # Add your plugins to the list below.
 plugins = [
+  "pdi-nomad-plugin-rheed @ git+https://github.com/glaidedata/pdi-nomad-plugin-rheed.git@v0.2.0",
   "nomad-baseclasses @ git+https://github.com/nomad-hzb/nomad-baseclasses.git",
   "nomad-hysprint @ git+https://github.com/nomad-hzb/nomad-hysprint.git",
   "nomad-north-voila @ git+https://github.com/FAIRmat-NFDI/nomad-north-voila.git",
-  "nomad-gui==2.0.0a2.dev583"
+  "nomad-gui==2.0.0b1",
 ]
 jupyter = [
   "jupyter-events",
@@ -52,15 +52,20 @@ jupyter = [
 gpu-action = []
 cpu-action = []
 
-dev = ["nomad-lab[parsing, infrastructure, dev]==1.4.2"]
+dev = ["nomad-lab[parsing, infrastructure, dev]==1.4.3"]
 
 [tool.uv]
+index = [
+  { name = "nomad-lab", url = "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple" },
+]
+
 extra-index-url = [
   "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple",
 ]
-prerelease = "explicit"
-# https://github.com/gmr/flatdict/issues/60
-# extra-build-dependencies = { flatdict = ["setuptools<82.0.0"] }
+prerelease = "if-necessary-or-explicit"
+
+[tool.uv.sources]
+nomad-gui = { index = "nomad-lab" }
 
 [tool.setuptools.packages.find]
 exclude = ["gui*", "docs*", "config*"]

@@ -1,6 +1,18 @@
 name: Deploy oasis image to VM
 
 on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "What to deploy"
+        required: false
+        default: auto
+        type: string
+      tag:
+        description: "Optional tag when mode=tag (for example: v1.2.3)"
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       mode:
@@ -34,13 +46,13 @@ jobs:
       name: glaidedata-oasis-prod
     env:
       PACKAGE_NAME: ${{ github.event.repository.name }}
-      INPUT_MODE: ${{ github.event.inputs.mode }}
-      INPUT_TAG: ${{ github.event.inputs.tag }}
+      INPUT_MODE: ${{ inputs.mode || 'auto' }}
+      INPUT_TAG: ${{ inputs.tag || '' }}
 
     steps:
       - name: Resolve deploy ref
         id: resolve
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const owner = context.repo.owner;

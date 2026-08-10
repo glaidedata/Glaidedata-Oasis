@@ -1,8 +1,9 @@
 services:
-  api_host: "localhost"
+  api_host: "nomad-oasis.glaidedata.com"
   api_base_path: "/nomad-oasis"
   upload_limit: 1000
   upload_members_group_search_enabled: true
+  https: true
 
 oasis:
   is_oasis: true
