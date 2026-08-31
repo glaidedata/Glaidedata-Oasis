@@ -39,6 +39,7 @@ plugins = [
 ]
 jupyter = [
   "jupyter-events",
+  "pyzmq==26.4.0",
   "voila",
   "ipyaggrid",
   "ipyvuetify",
