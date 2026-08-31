@@ -4958,7 +4958,7 @@ wheels = [
 [[package]]
 name = "nomad-baseclasses"
 version = "1.0.1"
-source = { git = "https://github.com/nomad-hzb/nomad-baseclasses.git#18f7bfbd4b04d11875657f0ceba9275b8ff424be" }
+source = { git = "https://github.com/nomad-hzb/nomad-baseclasses.git?rev=18f7bfbd4b04d11875657f0ceba9275b8ff424be#18f7bfbd4b04d11875657f0ceba9275b8ff424be" }
 dependencies = [
     { name = "chardet" },
     { name = "hdf5plugin" },
@@ -5018,9 +5018,9 @@ requires-dist = [
     { name = "jupyter-events", marker = "extra == 'jupyter'" },
     { name = "jupyter-flex", marker = "extra == 'jupyter'" },
     { name = "jupyterlab", marker = "extra == 'jupyter'", specifier = ">4.0" },
-    { name = "nomad-baseclasses", marker = "extra == 'plugins'", git = "https://github.com/nomad-hzb/nomad-baseclasses.git" },
+    { name = "nomad-baseclasses", marker = "extra == 'plugins'", git = "https://github.com/nomad-hzb/nomad-baseclasses.git?rev=18f7bfbd4b04d11875657f0ceba9275b8ff424be" },
     { name = "nomad-gui", marker = "extra == 'plugins'", specifier = "==2.0.0b1", index = "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple" },
-    { name = "nomad-hysprint", marker = "extra == 'plugins'", git = "https://github.com/nomad-hzb/nomad-hysprint.git" },
+    { name = "nomad-hysprint", marker = "extra == 'plugins'", git = "https://github.com/glaidedata/nomad-hysprint.git?rev=85379579129141982d7916a7c539143eab6c0a53" },
     { name = "nomad-lab", extras = ["dev", "infrastructure", "parsing"], marker = "extra == 'dev'", specifier = "==1.4.3" },
     { name = "nomad-lab", extras = ["infrastructure", "parsing"], specifier = "==1.4.3" },
     { name = "nomad-luqy-plugin", marker = "extra == 'plugins'", git = "https://github.com/Pepe-Marquez/nomad-luqy-plugin.git?rev=fcbee16c352d367512cb5312c66b34e3f5d21ac3" },
@@ -5052,7 +5052,7 @@ wheels = [
 [[package]]
 name = "nomad-hysprint"
 version = "1.0.0"
-source = { git = "https://github.com/nomad-hzb/nomad-hysprint.git#e158902c37eabfb614949590fb7eeb62ab0c4476" }
+source = { git = "https://github.com/glaidedata/nomad-hysprint.git?rev=85379579129141982d7916a7c539143eab6c0a53#85379579129141982d7916a7c539143eab6c0a53" }
 dependencies = [
     { name = "httpx" },
     { name = "nomad-baseclasses" },
@@ -7259,7 +7259,7 @@ wheels = [
 [[package]]
 name = "pynxtools-xps"
 version = "0.6.2.post1.dev5+g8c9eb2ca1"
-source = { git = "https://github.com/FAIRmat-NFDI/pynxtools-xps.git#8c9eb2ca1992fcc2d34f8481af8432c5a81505ca" }
+source = { git = "https://github.com/FAIRmat-NFDI/pynxtools-xps.git?rev=8c9eb2ca1992fcc2d34f8481af8432c5a81505ca#8c9eb2ca1992fcc2d34f8481af8432c5a81505ca" }
 dependencies = [
     { name = "igor2" },
     { name = "jsonschema" },
