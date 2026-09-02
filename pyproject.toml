@@ -32,10 +32,24 @@ repository = "https://github.com/glaidedata/glaidedata-oasis"
 # Add your plugins to the list below.
 plugins = [
   "pdi-nomad-plugin-rheed @ git+https://github.com/glaidedata/pdi-nomad-plugin-rheed.git@v0.2.0",
+  "nomad-baseclasses @ git+https://github.com/nomad-hzb/nomad-baseclasses.git@18f7bfbd4b04d11875657f0ceba9275b8ff424be",
+  "nomad-hysprint @ git+https://github.com/glaidedata/nomad-hysprint.git@85379579129141982d7916a7c539143eab6c0a53",
+  "nomad-luqy-plugin @ git+https://github.com/Pepe-Marquez/nomad-luqy-plugin.git@fcbee16c352d367512cb5312c66b34e3f5d21ac3",
+  "nomad-north-voila @ git+https://github.com/FAIRmat-NFDI/nomad-north-voila.git",
   "nomad-gui==2.0.0b1",
 ]
 jupyter = [
-'jupyter-events'
+  "jupyter-events",
+  "pyzmq==26.4.0",
+  "voila",
+  "ipyaggrid",
+  "ipyvuetify",
+  "ipysheet",
+  "ipydatagrid",
+  "jupyter-flex",
+  "ipympl",
+  "seaborn",
+  "jupyterlab>4.0"
 ]
 gpu-action = []
 cpu-action = []
@@ -57,3 +71,4 @@ nomad-gui = { index = "nomad-lab" }
 
 [tool.setuptools.packages.find]
 exclude = ["gui*", "docs*", "config*"]
+
