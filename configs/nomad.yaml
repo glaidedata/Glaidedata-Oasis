@@ -16,19 +16,12 @@ oasis:
         - hoffmann@pdi-berlin.de
 
 north:
+  enabled: true
   jupyterhub_crypt_key: "978bfb2e13a8448a253c629d8dd84ff89587f30e635b753153960930cad9d36d"
   tools:
     options:
       jupyter:
         image: ghcr.io/glaidedata/glaidedata-oasis/jupyter:main
-
-# Registering HySprint and Voila plugins
-plugins:
-  entry_points:
-    include:
-      - "nomad_hysprint.apps:hysprint_voila_app"
-      - "nomad_hysprint.schema_packages:hysprint_package"
-      - "nomad_north_voila.north_tools:voila"
       
 meta:
   deployment: "oasis"
