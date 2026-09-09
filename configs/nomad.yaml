@@ -23,6 +23,8 @@ auth:
     - oliverbierwagen
     - hoffmann@pdi-berlin.de
     - georg
+    - felix.dollinger@sweep-me.net
+    - felixd_sweepme
 
 plugins:
   entry_points:
