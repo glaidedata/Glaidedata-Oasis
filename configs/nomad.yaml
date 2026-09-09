@@ -8,12 +8,21 @@ services:
 oasis:
   is_oasis: true
   uses_central_user_management: true
-  allowed_users:
-        - joseph.rudzinski@physik.hu-berlin.de
-        - sebastian.brueckner@physik.hu-berlin.de
-        - abbas.gholami@glaidedata.com
-        - bierwagen@pdi-berlin.de
-        - hoffmann@pdi-berlin.de
+
+auth:
+  require_authentication: true
+  reject_unauthorized_users: true
+  authorized_users:
+    - joseph.rudzinski@physik.hu-berlin.de
+    - jrudzinski
+    - sebastian.brueckner@physik.hu-berlin.de
+    - brueckner
+    - abbas.gholami@glaidedata.com
+    - agholami
+    - bierwagen@pdi-berlin.de
+    - oliverbierwagen
+    - hoffmann@pdi-berlin.de
+    - georg
 
 north:
   jupyterhub_crypt_key: "978bfb2e13a8448a253c629d8dd84ff89587f30e635b753153960930cad9d36d"
