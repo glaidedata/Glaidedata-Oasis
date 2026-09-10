@@ -20,8 +20,10 @@ env:
   NOMAD_DOCS_REPO: https://github.com/FAIRmat-NFDI/nomad-docs.git
   NOMAD_DOCS_REPO_REF: ""
   # If you want to skip the tests for some plugins, add them here as a single string where
-  # each plugin is separated by whitespace
-  PLUGIN_TESTS_PLUGINS_TO_SKIP: "nomad_gui"
+  # each plugin is separated by a comma
+  # simulationworkflowschema is transitive via nomad-baseclasses; its upstream
+  # test setup currently does not provide pytest to nomad-plugin-tests.
+  PLUGIN_TESTS_PLUGINS_TO_SKIP: "nomad_gui,simulationworkflowschema"
 
 permissions:
   contents: write
