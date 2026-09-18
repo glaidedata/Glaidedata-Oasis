@@ -34,7 +34,7 @@ plugins:
           image: ghcr.io/glaidedata/glaidedata-oasis/jupyter:main
           
       "pdi_nomad_plugin.mbe.epic_parser:epic_parser": # to override parsing logic in PDI MBE
-          mainfile_name_re: '^(?!.*_RHEED\.xlsx$).+\.xlsx$'
+          mainfile_name_re: '(?i)^(?!.*_rheed\.xlsx$).+\.xlsx$'
           
 north:
   enabled: true
