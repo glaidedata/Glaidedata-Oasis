@@ -5033,7 +5033,7 @@ requires-dist = [
     { name = "nomad-luqy-plugin", marker = "extra == 'plugins'", git = "https://github.com/Pepe-Marquez/nomad-luqy-plugin.git?rev=fcbee16c352d367512cb5312c66b34e3f5d21ac3" },
     { name = "nomad-north-jupyter", marker = "extra == 'plugins'", specifier = ">=0.2.6" },
     { name = "nomad-north-voila", marker = "extra == 'plugins'", specifier = "==0.1.15" },
-    { name = "pdi-nomad-plugin", marker = "extra == 'plugins'", git = "https://github.com/PDI-Berlin/pdi-nomad-plugin.git?rev=7a1c6a3f1ee21edca2703297f86ae15dae71389a" },
+    { name = "pdi-nomad-plugin", marker = "extra == 'plugins'", git = "https://github.com/PDI-Berlin/pdi-nomad-plugin.git?rev=v1.1.2" },
     { name = "pdi-nomad-plugin-rheed", marker = "extra == 'plugins'", git = "https://github.com/glaidedata/pdi-nomad-plugin-rheed.git?rev=v0.3.0" },
     { name = "pyzmq", marker = "extra == 'jupyter'", specifier = "==26.4.0" },
     { name = "seaborn", marker = "extra == 'jupyter'" },
@@ -6248,7 +6248,7 @@ wheels = [
 [[package]]
 name = "pdi-nomad-plugin"
 version = "0.0.0"
-source = { git = "https://github.com/PDI-Berlin/pdi-nomad-plugin.git?rev=7a1c6a3f1ee21edca2703297f86ae15dae71389a#7a1c6a3f1ee21edca2703297f86ae15dae71389a" }
+source = { git = "https://github.com/PDI-Berlin/pdi-nomad-plugin.git?rev=v1.1.2#7a1c6a3f1ee21edca2703297f86ae15dae71389a" }
 dependencies = [
     { name = "epic-scraper" },
     { name = "nomad-lab" },
