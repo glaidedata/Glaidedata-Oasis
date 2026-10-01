@@ -1812,6 +1812,11 @@ wheels = [
 ]
 
 [[package]]
+name = "epic-scraper"
+version = "1.0.0"
+source = { git = "https://github.com/PDI-Berlin/EPIC_scraper.git?rev=v1.0.0#93fd29c94d2b3674331068f29dce8f8c0b6ba5a9" }
+
+[[package]]
 name = "escapism"
 version = "1.1.0"
 source = { registry = "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple" }
@@ -5006,6 +5011,7 @@ plugins = [
     { name = "nomad-luqy-plugin" },
     { name = "nomad-north-jupyter" },
     { name = "nomad-north-voila" },
+    { name = "pdi-nomad-plugin" },
     { name = "pdi-nomad-plugin-rheed" },
 ]
 
@@ -5027,7 +5033,8 @@ requires-dist = [
     { name = "nomad-luqy-plugin", marker = "extra == 'plugins'", git = "https://github.com/Pepe-Marquez/nomad-luqy-plugin.git?rev=fcbee16c352d367512cb5312c66b34e3f5d21ac3" },
     { name = "nomad-north-jupyter", marker = "extra == 'plugins'", specifier = ">=0.2.6" },
     { name = "nomad-north-voila", marker = "extra == 'plugins'", specifier = "==0.1.15" },
-    { name = "pdi-nomad-plugin-rheed", marker = "extra == 'plugins'", git = "https://github.com/glaidedata/pdi-nomad-plugin-rheed.git?rev=v0.2.0" },
+    { name = "pdi-nomad-plugin", marker = "extra == 'plugins'", git = "https://github.com/PDI-Berlin/pdi-nomad-plugin.git?rev=v1.1.2" },
+    { name = "pdi-nomad-plugin-rheed", marker = "extra == 'plugins'", git = "https://github.com/glaidedata/pdi-nomad-plugin-rheed.git?rev=v0.3.0" },
     { name = "pyzmq", marker = "extra == 'jupyter'", specifier = "==26.4.0" },
     { name = "seaborn", marker = "extra == 'jupyter'" },
     { name = "voila", marker = "extra == 'jupyter'" },
@@ -5182,6 +5189,18 @@ dependencies = [
     { name = "nomad-lab" },
     { name = "nomad-measurements" },
     { name = "python-magic-bin", marker = "sys_platform == 'win32'" },
+]
+
+[[package]]
+name = "nomad-material-processing"
+version = "1.0.6"
+source = { registry = "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple" }
+dependencies = [
+    { name = "nomad-lab" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/52/72058088fab7bfa2099bdd4c57f56fd45b411fa27e52f115b9d0bcc726e5/nomad_material_processing-1.0.6.tar.gz", hash = "sha256:761d0bec27751905a77c9c979e78e7e8302d846d50bba2a972d738617987a816", size = 587887, upload-time = "2026-04-02T15:19:04.967Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/24/a0180520370ac83a2bd2aa8aa3f4a54ddb46a0d67209d83fcc5c68e508db/nomad_material_processing-1.0.6-py3-none-any.whl", hash = "sha256:5bf5c45d4f6c88367c105db81834a5887dc32f16dc93da10ee001ad340063aad", size = 54873, upload-time = "2026-04-02T15:19:03.441Z" },
 ]
 
 [[package]]
@@ -6227,9 +6246,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pdi-nomad-plugin"
+version = "0.0.0"
+source = { git = "https://github.com/PDI-Berlin/pdi-nomad-plugin.git?rev=v1.1.2#7a1c6a3f1ee21edca2703297f86ae15dae71389a" }
+dependencies = [
+    { name = "epic-scraper" },
+    { name = "nomad-lab" },
+    { name = "nomad-material-processing" },
+    { name = "nomad-measurements" },
+]
+
+[[package]]
 name = "pdi-nomad-plugin-rheed"
-version = "0.2.0"
-source = { git = "https://github.com/glaidedata/pdi-nomad-plugin-rheed.git?rev=v0.2.0#a7e8bd0fa38989d25d4c9b14e261b90a585904d4" }
+version = "0.3.0"
+source = { git = "https://github.com/glaidedata/pdi-nomad-plugin-rheed.git?rev=v0.3.0#15d48a1a298d854aa4094544a0a980c99880c5b6" }
 dependencies = [
     { name = "nomad-lab" },
     { name = "nomad-measurements" },

@@ -32,7 +32,10 @@ plugins:
       nomad_north_jupyter.north_tools:jupyter:
         north_tool:
           image: ghcr.io/glaidedata/glaidedata-oasis/jupyter:main
-
+          
+      "pdi_nomad_plugin.mbe.epic_parser:epic_parser": # to override parsing logic in PDI MBE
+          mainfile_name_re: '(?i)^(?!.*_rheed\.xlsx$).+\.xlsx$'
+          
 north:
   enabled: true
   jupyterhub_crypt_key: "978bfb2e13a8448a253c629d8dd84ff89587f30e635b753153960930cad9d36d"

@@ -31,7 +31,8 @@ repository = "https://github.com/glaidedata/glaidedata-oasis"
 [project.optional-dependencies]
 # Add your plugins to the list below.
 plugins = [
-  "pdi-nomad-plugin-rheed @ git+https://github.com/glaidedata/pdi-nomad-plugin-rheed.git@v0.2.0",
+  "pdi-nomad-plugin-rheed @ git+https://github.com/glaidedata/pdi-nomad-plugin-rheed.git@v0.3.0",
+  "pdi-nomad-plugin @ git+https://github.com/PDI-Berlin/pdi-nomad-plugin.git@v1.1.2",
   "nomad-baseclasses @ git+https://github.com/nomad-hzb/nomad-baseclasses.git@18f7bfbd4b04d11875657f0ceba9275b8ff424be",
   "nomad-hysprint @ git+https://github.com/glaidedata/nomad-hysprint.git@85379579129141982d7916a7c539143eab6c0a53",
   "nomad-luqy-plugin @ git+https://github.com/Pepe-Marquez/nomad-luqy-plugin.git@fcbee16c352d367512cb5312c66b34e3f5d21ac3",
@@ -69,7 +70,7 @@ prerelease = "if-necessary-or-explicit"
 
 [tool.uv.sources]
 nomad-gui = { index = "nomad-lab" }
+epic_scraper = { git = "https://github.com/PDI-Berlin/EPIC_scraper.git", rev = "v1.0.0" }
 
 [tool.setuptools.packages.find]
 exclude = ["gui*", "docs*", "config*"]
-
