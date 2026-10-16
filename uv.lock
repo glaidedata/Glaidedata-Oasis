@@ -5032,7 +5032,7 @@ requires-dist = [
     { name = "nomad-lab", extras = ["dev", "infrastructure", "parsing"], marker = "extra == 'dev'", specifier = "==1.4.3" },
     { name = "nomad-lab", extras = ["infrastructure", "parsing"], specifier = "==1.4.3" },
     { name = "nomad-luqy-plugin", marker = "extra == 'plugins'", git = "https://github.com/Pepe-Marquez/nomad-luqy-plugin.git?rev=fcbee16c352d367512cb5312c66b34e3f5d21ac3" },
-    { name = "nomad-measurements-sweepme", marker = "extra == 'plugins'", git = "https://github.com/glaidedata/nomad-measurements-sweepme.git?rev=v0.2.0" },
+    { name = "nomad-measurements-sweepme", marker = "extra == 'plugins'", git = "https://github.com/glaidedata/nomad-measurements-sweepme.git?rev=v0.2.1" },
     { name = "nomad-north-jupyter", marker = "extra == 'plugins'", specifier = ">=0.2.6" },
     { name = "nomad-north-voila", marker = "extra == 'plugins'", specifier = "==0.1.15" },
     { name = "pdi-nomad-plugin", marker = "extra == 'plugins'", git = "https://github.com/PDI-Berlin/pdi-nomad-plugin.git?rev=v1.1.2" },
@@ -5221,8 +5221,8 @@ wheels = [
 
 [[package]]
 name = "nomad-measurements-sweepme"
-version = "0.2.0"
-source = { git = "https://github.com/glaidedata/nomad-measurements-sweepme.git?rev=v0.2.0#689c3f40162b5ea4fa156d1355f63ad98d19b007" }
+version = "0.2.1"
+source = { git = "https://github.com/glaidedata/nomad-measurements-sweepme.git?rev=v0.2.1#721aa27090a4171a69ffe99395defc58a1db8896" }
 dependencies = [
     { name = "nomad-baseclasses" },
     { name = "nomad-lab" },
