@@ -1,82 +1,22 @@
-# Netcup deployment: manual migration phase
+# Netcup deployment (manual migration phase)
 
-This uses the existing release build/test workflow and the existing tag-over-SSH
-deployment interface. The netcup Bash script adapts the Hetzner script supplied
-by the administrator; it does not install Oasis or run Ansible provisioning.
+Published releases still run the existing build/test workflow, publish both
+images, and deploy automatically to Hetzner. The netcup target is selected only
+by a manual dispatch of `release-tag-build-and-deploy.yml`. Both targets send one
+tag over SSH to a restricted server-side Bash script. This does not rerun
+Ansible or change DNS, certificates, secrets, volumes, or database services.
 
-**Automatic releases still deploy to Hetzner.** The reusable workflow has no
-netcup target input in this phase. Only a manual dispatch of the deployment
-workflow can select netcup. Keep the Hetzner script, environment and credentials
-unchanged. Do not rerun a release build to test netcup deployment.
+## Prerequisite: protect NORTH state
 
-All server commands below are for a separately approved installation/test window.
-They have not been executed as part of this implementation.
-
-## Prerequisites before installation or container recreation
-
-- Verify netcup is `159.195.131.244`, running project `glaide_oasis_staging` under
-  `/opt/nomad/glaide-oasis-staging`, with four workers and healthy dependencies.
-  RabbitMQ, Elasticsearch, MongoDB, PostgreSQL, Temporal, app and NORTH define
-  Docker healthchecks. Worker, proxy and optional logtransfer do not: check
-  their running state, then verify processing and proxy behavior separately.
-- Review the installed Compose and NOMAD YAML against the Ansible working files.
-  Preserve manual changes. The script supports their existing indentation and
-  unquoted image scalars; it refuses missing, duplicate or unexpected image
-  references rather than guessing. It changes only the five Compose image fields
-  and the Jupyter tool image under `plugins.entry_points.options` in NOMAD YAML.
-- Verify current, restorable backups of the databases, file store, configuration
-  and private secrets. The script saves configuration/image metadata, **not data
-  backups**. Review release compatibility; an image downgrade cannot undo schema
-  changes. Confirm enough disk and RAM for pulling and starting both images.
-- **Protect NORTH state before the first recreation.** The netcup administrator
-  confirmed that `/app/jupyterhub.sqlite` and `/app/jupyterhub_cookie_secret`
-  are in NORTH's nonpersistent container layer. Complete a separately reviewed,
-  one-time server preparation that preserves both files and any SQLite sidecars;
-  verify persistence and a restorable backup before enabling deployment. Keep
-  the existing crypt key, service token and authentication settings. Do not
-  initialize replacement Hub state. This preparation is outside this deployment
-  implementation.
-- Keep `/etc/nomad-oasis-staging/{nomad.env,db.env}` unchanged, root-owned and
-  mode 0600. Preserve all named volumes, `/srv/nomad/.volumes/fs` (including NORTH
-  users), authentication settings, Docker group access and the existing network.
-- Schedule downtime, finish/drain processing, and have users save and stop their
-  notebooks through NORTH. Existing notebook containers do not acquire the new
-  Jupyter image automatically. Four running workers alone do not prove processing
-  works or that peak workloads fit in RAM.
-
-In the later server-preparation phase, an administrator can use these **read-only**
-commands to identify the running container and examine the relevant paths without
-printing secret contents:
-
-```bash
-dc=(sudo docker compose --project-directory /opt/nomad/glaide-oasis-staging
-    -p glaide_oasis_staging --env-file /etc/nomad-oasis-staging/db.env
-    -f /opt/nomad/glaide-oasis-staging/docker-compose.staging.yaml)
-north_id=$("${dc[@]}" ps -q north)
-test -n "$north_id" || { echo 'NORTH is not running' >&2; exit 1; }
-sudo docker inspect --format 'workdir={{.Config.WorkingDir}} mounts={{json .Mounts}}' "$north_id"
-sudo docker exec "$north_id" sh -c '
-  pwd
-  for path in /app/jupyterhub.sqlite /app/jupyterhub_cookie_secret; do
-    if [ -e "$path" ]; then stat -c "%n owner=%u mode=%a" "$path";
-    else printf "%s absent\n" "$path"; fi
-  done
-  for key in JPY_COOKIE_SECRET JUPYTERHUB_CRYPT_KEY; do
-    if printenv "$key" >/dev/null; then printf "%s is set\n" "$key";
-    else printf "%s is absent\n" "$key"; fi
-  done
-'
-```
-
-These commands identify likely defaults and mounts; they do not prove the Hub's
-effective database path or that a file has a restorable copy. Privately review
-the installed Hub configuration/overrides and match the actual database and
-cookie-secret locations to a persistent mount or separately preserved setting.
-Check backups and permissions without printing key values. If the state is only
-inside the container, stop; this deployment must not recreate NORTH yet.
-
-Only after that review or a separately approved persistence correction, record
-the evidence privately and create the explicit prerequisite file on netcup:
+**Do not deploy, including a same-version v1.2.1 test, until this is done.**
+The current NORTH container stores `/app/jupyterhub.sqlite` and
+`/app/jupyterhub_cookie_secret` outside its persistent mounts. A separately
+reviewed, one-time server preparation must back up and preserve their existing
+bytes, including SQLite journal/WAL sidecars, in persistent storage. Coordinate
+active Jupyter sessions and verify login, Jupyter and Voilà after that change.
+Do not initialize replacement Hub state. Keep the existing authentication,
+encryption key, service token, network and file storage. Verify a restorable
+backup and persistence across NORTH recreation before creating the marker:
 
 ```sh
 printf '%s\n' 'glaide_oasis_staging:north-state-persistent' |
@@ -85,75 +25,49 @@ sudo chown root:root /etc/nomad-oasis-staging/north-state-verified
 sudo chmod 0600 /etc/nomad-oasis-staging/north-state-verified
 ```
 
-This file records an administrator's completed review; its presence does **not**
-prove persistence. Do not create it from the example alone. Remove it and repeat
-the review whenever Hub storage/configuration changes. The deployment script
-refuses to proceed without it.
+The marker records an administrator's verification; it is not itself proof of
+persistence. The deployment script refuses to recreate NORTH without it.
 
-## One-time restricted SSH setup
+## One-time installation
 
-Use a dedicated `deploy-netcup` account and key, separate from Hetzner and the
-administrator accounts. No Docker-group membership or general sudo permission.
-The account needs a shell for the forced command, but no password login. Keep
-its home, `.ssh`, and `authorized_keys` root-owned and not writable by this user.
-Check existing SSH allowlists before installing the key; retain administrator
-access. Obtain and verify the netcup host public key through a trusted channel.
-
-Install the reviewed script through administrator access, from the supplied
-source checkout/copy (never fetch changing source during a deployment):
+After reviewing the installed staging Compose and NOMAD files, install the
+reviewed script as root-owned mode 0755 at
+`/usr/local/sbin/deploy-oasis-netcup.sh`. Keep the stack and private directories
+inaccessible to the restricted deploy account. Retain the existing project
+`glaide_oasis_staging`, Compose file
+`/opt/nomad/glaide-oasis-staging/docker-compose.staging.yaml`, NOMAD file
+`configs/nomad.staging.yaml`, and `/etc/nomad-oasis-staging/{db,nomad}.env`.
+The script expects their current unquoted image-field layout. Ensure root can
+read both GHCR images and that Bash, Docker Compose v2, awk, flock and curl are
+installed.
 
 ```sh
 sudo install -o root -g root -m 0755 scripts/deploy-oasis-netcup.sh \
   /usr/local/sbin/deploy-oasis-netcup.sh
 ```
 
-Keep `/usr/local/sbin`, the stack/config directories and the private secrets
-directory root-owned and not writable by the deployment account. Ensure Bash,
-Docker Compose v2 (including `--wait`), curl, awk, flock and ip are available.
-For private GHCR packages, provision root's read-only registry access separately;
-do not send registry credentials in the SSH command.
-
-Authorized-key entry (replace only the public key):
+Give a dedicated `deploy-netcup` SSH account a separate key and only this
+forced command in its root-controlled `authorized_keys`:
 
 ```text
 restrict,command="sudo -n /usr/local/sbin/deploy-oasis-netcup.sh \"$SSH_ORIGINAL_COMMAND\"" ssh-ed25519 PUBLIC_KEY
 ```
 
-Unlike the original unquoted argument expansion, this passes the complete request
-as one argument. The script permits only `vX.Y.Z`; no `main`, whitespace, options
-or shell expressions. Do not use `eval` or `bash -c` on the requested tag.
+Allow only `/usr/local/sbin/deploy-oasis-netcup.sh *` through a root-owned,
+mode-0440 sudoers file; validate it with `visudo -cf`. Do not grant general
+Docker or sudo access. The script accepts exactly one `vX.Y.Z` tag.
 
-Create `/etc/sudoers.d/deploy-netcup` with `visudo`, root-owned mode 0440:
+Create GitHub environment `glaidedata-oasis-netcup-staging` with its own
+environment-scoped `DEPLOY_HOST` (`159.195.131.244`), `DEPLOY_USER`,
+`DEPLOY_SSH_KEY`, and `NETCUP_DEPLOY_KNOWN_HOSTS` secrets. Obtain the host key
+through a trusted channel. Keep the existing `glaidedata-oasis-prod`
+environment and Hetzner credentials unchanged. The workflow rejects a netcup
+host other than the fixed IP and requires a matching pinned host key.
 
-```sudoers
-deploy-netcup ALL=(root) NOPASSWD: /usr/local/sbin/deploy-oasis-netcup.sh *
-```
+## Manual test and verification
 
-The script independently validates argument count and contents. Keep sudo's
-environment reset; do not grant SETENV or preserve shell startup variables.
-Validate the sudoers file with `visudo -cf` before testing.
-
-## GitHub environment
-
-Create `glaidedata-oasis-netcup-staging` with environment-scoped secrets:
-
-| Secret | Value |
-| --- | --- |
-| `NETCUP_DEPLOY_HOST` | `159.195.131.244` |
-| `NETCUP_DEPLOY_USER` | `deploy-netcup` |
-| `NETCUP_DEPLOY_SSH_KEY` | Dedicated netcup private key |
-| `NETCUP_DEPLOY_KNOWN_HOSTS` | Verified known_hosts line for `159.195.131.244` |
-
-Do not define these names as shared repository/organization fallbacks. The legacy
-`DEPLOY_*` secrets and `glaidedata-oasis-prod` environment remain unchanged.
-Restrict deployment refs and enable environment review where available. Do not
-approve an unreviewed workflow ref. The netcup job requires strict host checking;
-an unverified runtime `ssh-keyscan` is not a substitute.
-
-## Manual v1.2.1 test
-
-After the workflow is available on the default branch and the selected code ref
-is approved, dispatch **Deploy oasis image to VM** with:
+After the workflow is available on the default branch and NORTH persistence is
+verified, dispatch **Deploy oasis image to VM** on the reviewed workflow ref:
 
 ```text
 target = netcup
@@ -161,99 +75,50 @@ mode   = tag
 tag    = v1.2.1
 ```
 
-Select the reviewed workflow branch, not the old `v1.2.1` tag as the workflow ref.
-GitHub verifies the published release; the remote script pulls both images before
-changing configuration. The script validates the current/candidate Compose,
-saves prior files and running image identities, and recreates only NORTH, four
-workers, app and already-running logtransfer. It uses a host lock and allows
-600 seconds per service wait. nginx is tested/reloaded and HTTPS alive/GUI checks
-use the real hostname with local address resolution and certificate validation.
+The workflow checks that the tag is a published release. The script saves the
+current Compose and NOMAD files under
+`/etc/nomad-oasis-staging/deploy-backups/`, pulls both images before changing
+either file, then recreates NORTH, four workers, app, and logtransfer only if
+already active. It never runs Compose `down`, removes volumes, or prunes images.
+It validates Compose, waits for services, reloads nginx and checks the HTTPS
+alive/GUI routes. An SSH/script failure makes the Actions job fail.
 
-The script uses release tags, as Hetzner does. Tags can be republished. For this
-rehearsal compare `requested-images.txt` with the original build's manifest-list
-digests (an image ID is a different kind of digest):
+Before testing, confirm restorable backups and that the previous app and
+Jupyter images are available for rollback; record their image IDs/digests
+because tags can be republished. Record database container IDs and volume
+names. Afterward, confirm those IDs and
+volumes are unchanged, four workers are running, and authentication, an upload,
+search, a new Jupyter session and Voilà work. Existing notebook containers do
+not switch images automatically.
 
-```text
-app:     sha256:7dc9e8fed6b844d7f320596b8465e3d87e4369c9472caf1158d316fa3b54f697
-jupyter: sha256:b75520bbc3dd6a83fae06a179ba859888568acff1d231451a8031a61868a3f2b
-```
+## Rollback
 
-Before and after the test, record the database container IDs, mounted volume
-names, four worker IDs/count, running image IDs and private secret checksums.
-Check that databases were not recreated and non-image settings/secrets did not
-change. Verify login/authorization, representative upload processing/download,
-search, a newly launched Jupyter session, persistent notebook files, Voilà and
-WebSockets. Inspect memory, restart/OOM state and worker activity. Do not treat
-the Actions green result as proof of authenticated end-to-end functionality.
-
-Do not rerun Ansible steps 02 or 04 as an upgrade: they can restore the v1.2.1
-bootstrap files. Reconcile any future provisioning changes with the deployed
-configuration first. No DNS, certificate or production-domain changes belong to
-this phase. The legacy Hetzner NOMAD Jupyter `:main` setting is left untouched;
-netcup updates its effective tool image alongside Compose.
-
-## Failure and manual rollback
-
-SSH propagates script failures to Actions. A timeout/disconnect may leave a
-partial deployment: inspect the host and lock before retrying. No automatic
-rollback is attempted. The printed root-only directory under
-`/etc/nomad-oasis-staging/deploy-backups/` contains both prior configuration files,
-running container image IDs/repository digests, the old Jupyter image reference
-and its local image identity when available,
-and, after successful pulls, the requested image identities. These backups are
-not pruned by the script. The initial Ansible start playbook explicitly pulls
-Jupyter if Compose skips its zero-replica service, but later local image cleanup
-could remove that image. The script records `locally_available=no` and continues
-the upgrade if the old image is missing. In that case, rollback is **not ready**
-until an administrator recovers and verifies the previous Jupyter image.
-
-For an approved rollback, first finish/stop conflicting deployment activity and
-acquire the same lock in an administrator root shell. Check schema compatibility
-and confirm prior images remain available. Restore the saved Compose and NOMAD
-files with their permissions while holding the lock. If a tag moved, use the recorded immutable image
-references in all affected image fields, including NOMAD Jupyter, instead of
-pulling that tag again. Do not restore databases merely to undo image selection.
-
-In the root shell, set `backup` to the reviewed backup directory, then:
+If deployment or checks fail, inspect the host before retrying. The script
+does not attempt automatic rollback. In a root shell, set `backup` to the
+printed directory and hold the deployment lock while restoring configuration:
 
 ```bash
 exec 9>/etc/nomad-oasis-staging/deploy.lock
 flock -n 9 || exit 1
-: "${backup:?Set backup to the reviewed deployment backup directory}"
+: "${backup:?Set backup to the reviewed backup directory}"
 cp -p "$backup/docker-compose.staging.yaml" /opt/nomad/glaide-oasis-staging/docker-compose.staging.yaml
 cp -p "$backup/nomad.staging.yaml" /opt/nomad/glaide-oasis-staging/configs/nomad.staging.yaml
-# If prior tags moved, replace restored image scalars with recorded immutable refs here.
 dc=(docker compose --project-directory /opt/nomad/glaide-oasis-staging
     -p glaide_oasis_staging --env-file /etc/nomad-oasis-staging/db.env
     -f /opt/nomad/glaide-oasis-staging/docker-compose.staging.yaml)
 "${dc[@]}" config -q
-"${dc[@]}" up -d --no-deps --force-recreate --no-build --pull never --wait --wait-timeout 600 north
-"${dc[@]}" up -d --no-deps --force-recreate --no-build --pull never --scale worker=4 --wait --wait-timeout 600 worker
-"${dc[@]}" up -d --no-deps --force-recreate --no-build --pull never --wait --wait-timeout 600 app
-# Recreate logtransfer with --profile with_logtransfer only if it was active.
-"${dc[@]}" exec -T proxy nginx -t
-"${dc[@]}" exec -T proxy nginx -s reload
+"${dc[@]}" up -d --no-deps --force-recreate --pull never --wait --wait-timeout 600 north
+"${dc[@]}" up -d --no-deps --force-recreate --pull never --scale worker=4 --wait --wait-timeout 600 worker
+"${dc[@]}" up -d --no-deps --force-recreate --pull never --wait --wait-timeout 600 app
+"${dc[@]}" exec -T proxy nginx -t && "${dc[@]}" exec -T proxy nginx -s reload
 ```
 
-Repeat the HTTPS and authenticated verification above. A database migration
-requires its own reviewed recovery procedure. Do not use stack shutdown, volume
-removal, orphan removal or image pruning for deployment or rollback.
+If logtransfer was active, recreate it with its profile too. Test HTTPS and
+the authenticated functions again. Use the recorded prior image digests in all
+six image fields if a tag has moved; restoring YAML alone cannot undo an
+application database migration.
+Do not stop or recreate database services, remove volumes, or run Ansible's
+initial start playbook as a rollback.
 
-## Later automatic switch (not implemented)
-
-After migration acceptance, review adding a `target` input to `workflow_call`
-and setting the existing `docker-publish.yml` deployment call to netcup, with the
-appropriate production environment/hostname checks. Retain one deployment call.
-Historical workflow reruns retain old code: separately disable their ability to
-deploy to Hetzner at final cutover, while retaining its configuration for recovery.
-
-## Local validation only
-
-```sh
-bash -n scripts/deploy-oasis-netcup.sh
-python3 tests/test_netcup_deploy.py
-git diff --check
-# If installed:
-shellcheck scripts/deploy-oasis-netcup.sh
-actionlint .github/workflows/release-tag-build-and-deploy.yml
-```
+Automatic release deployment remains on Hetzner until a separately reviewed
+cutover changes the existing release workflow call.

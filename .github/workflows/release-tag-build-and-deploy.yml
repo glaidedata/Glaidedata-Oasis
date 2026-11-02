@@ -59,40 +59,32 @@ jobs:
       INPUT_TAG: ${{ inputs.tag || '' }}
 
     steps:
-      - name: Validate target
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          case "$INPUT_TARGET" in
-            hetzner) ;;
-            netcup) test "$EVENT_NAME" = workflow_dispatch ;;
-            *) echo "Unsupported deployment target" >&2; exit 1 ;;
-          esac
-
-      - name: Validate explicit netcup release
-        if: inputs.target == 'netcup'
-        id: netcup
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const tag = process.env.INPUT_TAG;
-            if (process.env.INPUT_MODE !== 'tag' || !/^v\d+\.\d+\.\d+$/.test(tag)) {
-              throw new Error('Netcup requires mode=tag and an explicit release tag such as v1.2.1.');
-            }
-            const { data: release } = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner, repo: context.repo.repo, tag
-            });
-            if (release.draft || release.tag_name !== tag) {
-              throw new Error('The requested release must be published.');
-            }
-            core.setOutput('tag', tag);
-
       - name: Resolve deploy ref
-        if: inputs.target != 'netcup'
         id: resolve
         uses: actions/github-script@v8
         with:
           script: |
+            if (process.env.INPUT_TARGET === 'netcup') {
+              if (context.eventName !== 'workflow_dispatch' ||
+                  process.env.INPUT_MODE !== 'tag' ||
+                  !/^v\d+\.\d+\.\d+$/.test(process.env.INPUT_TAG)) {
+                throw new Error('Netcup requires a manual dispatch with mode=tag and an explicit vX.Y.Z release.');
+              }
+              const tag = process.env.INPUT_TAG;
+              const { data: release } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner, repo: context.repo.repo, tag
+              });
+              if (release.draft || release.tag_name !== tag) {
+                throw new Error('The requested release must be published.');
+              }
+              core.setOutput('deploy_ref', tag);
+              core.setOutput('reason', 'manual-netcup-release');
+              return;
+            }
+            if (process.env.INPUT_TARGET !== 'hetzner') {
+              throw new Error('Unsupported deployment target.');
+            }
+
             const owner = context.repo.owner;
             const ownerType = context.payload.repository.owner.type;
             const packageName = process.env.PACKAGE_NAME.toLowerCase();
@@ -190,47 +182,40 @@ jobs:
             core.setOutput("reason", reason);
 
       - name: Write SSH key
-        if: inputs.target != 'netcup'
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-
-      - name: Deploy (forced-command SSH key)
-        if: inputs.target != 'netcup'
-        run: |
-          set -euo pipefail
-          echo "Deploying ref: ${{ steps.resolve.outputs.deploy_ref }} (${{ steps.resolve.outputs.reason }})"
-          ssh -i ~/.ssh/id_ed25519 \
-              -o IdentitiesOnly=yes \
-              -o StrictHostKeyChecking=accept-new \
-              -p 22 \
-              "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-              "${{ steps.resolve.outputs.deploy_ref }}"
-
-      - name: Deploy netcup release (forced-command SSH key)
-        if: inputs.target == 'netcup'
         env:
-          DEPLOY_TAG: ${{ steps.netcup.outputs.tag }}
-          NETCUP_HOST: ${{ secrets.NETCUP_DEPLOY_HOST }}
-          NETCUP_USER: ${{ secrets.NETCUP_DEPLOY_USER }}
-          NETCUP_KEY: ${{ secrets.NETCUP_DEPLOY_SSH_KEY }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           NETCUP_KNOWN_HOSTS: ${{ secrets.NETCUP_DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          test "$NETCUP_HOST" = 159.195.131.244
-          [[ "$NETCUP_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          test -n "$NETCUP_KEY"
-          test -n "$NETCUP_KNOWN_HOSTS"
-          umask 077
-          ssh_dir=$(mktemp -d)
-          trap 'rm -rf "$ssh_dir"' EXIT
-          printf '%s\n' "$NETCUP_KEY" > "$ssh_dir/key"
-          printf '%s\n' "$NETCUP_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
-          ssh -T -i "$ssh_dir/key" \
-              -o BatchMode=yes -o IdentitiesOnly=yes \
-              -o StrictHostKeyChecking=yes \
-              -o UserKnownHostsFile="$ssh_dir/known_hosts" \
-              -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
-              -p 22 "$NETCUP_USER@$NETCUP_HOST" "$DEPLOY_TAG"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if [[ "$INPUT_TARGET" == netcup ]]; then
+            test "$DEPLOY_HOST" = 159.195.131.244
+            test -n "$NETCUP_KNOWN_HOSTS"
+            printf '%s\n' "$NETCUP_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            chmod 600 ~/.ssh/known_hosts
+          fi
+
+      - name: Deploy (forced-command SSH key)
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_REF: ${{ steps.resolve.outputs.deploy_ref }}
+          DEPLOY_REASON: ${{ steps.resolve.outputs.reason }}
+        run: |
+          set -euo pipefail
+          echo "Deploying ref: $DEPLOY_REF ($DEPLOY_REASON)"
+          host_check=(-o StrictHostKeyChecking=accept-new)
+          if [[ "$INPUT_TARGET" == netcup ]]; then
+            [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+            host_check=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+                        -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15)
+          fi
+          ssh -i ~/.ssh/id_ed25519 \
+              -o IdentitiesOnly=yes \
+              "${host_check[@]}" \
+              -p 22 \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "$DEPLOY_REF"

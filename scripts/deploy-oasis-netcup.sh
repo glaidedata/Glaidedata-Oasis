@@ -60,73 +60,46 @@ main() {
     local project=glaide_oasis_staging domain=nomad-oasis-test.glaidedata.com
     local repo=ghcr.io/glaidedata/glaidedata-oasis
     local compose_file=$stack/docker-compose.staging.yaml nomad_file=$stack/configs/nomad.staging.yaml
-    local file service id old_jupyter backup active_logtransfer=0
-    local -a ids dc=(docker --host unix:///var/run/docker.sock compose
+    local file backup candidate_compose candidate_nomad logtransfer_id active_logtransfer=0
+    local -a dc=(docker compose
         --project-directory "$stack" -p "$project" --env-file "$private/db.env")
     cd "$stack"
     exec 9>"$private/deploy.lock"
     flock -n 9 || die 'Another netcup deployment is running.'
-    ip -4 -o address show | grep -q ' inet 159\.195\.131\.244/' || die 'Not the expected netcup host.'
     for file in "$compose_file" "$nomad_file"; do
         [[ -f $file && ! -L $file && $(stat -c %u "$file") == 0 ]] || die "Unexpected config file: $file"
         (( (8#$(stat -c %a "$file") & 8#022) == 0 )) || die "Writable config file: $file"
     done
     for file in "$private/nomad.env" "$private/db.env" "$private/north-state-verified"; do
         [[ -f $file && ! -L $file && $(stat -c %u:%a "$file") == 0:600 ]] ||
-            die "Required root-owned mode-0600 file missing or unsafe: $file (see runbook)"
+            die "Required root-owned mode-0600 file missing or unsafe: $file"
     done
     grep -qx 'glaide_oasis_staging:north-state-persistent' "$private/north-state-verified" ||
         die 'Verify and preserve JupyterHub state before allowing NORTH recreation.'
     "${dc[@]}" -f "$compose_file" config -q
-    for service in mongo elastic rabbitmq postgresql temporal app north; do
-        id=$("${dc[@]}" -f "$compose_file" ps -q "$service")
-        [[ -n $id && $id != *$'\n'* ]] || die "Expected one running $service container."
-        [[ $(docker inspect -f '{{.State.Health.Status}}' "$id") == healthy ]] || die "$service is not healthy."
-    done
-    # nginx has no Docker healthcheck; Compose can only confirm it is running.
-    id=$("${dc[@]}" -f "$compose_file" ps -q proxy)
-    [[ -n $id && $id != *$'\n'* ]] || die 'Expected one running proxy container.'
-    mapfile -t ids < <("${dc[@]}" -f "$compose_file" ps --status running -q worker)
-    [[ ${#ids[@]} == 4 ]] || die 'Expected four running workers.'
-    id=$("${dc[@]}" -f "$compose_file" ps --status running -q logtransfer)
-    [[ -z $id ]] || active_logtransfer=1
+    logtransfer_id=$("${dc[@]}" -f "$compose_file" ps --status running -q logtransfer) ||
+        die 'Could not determine whether logtransfer is active.'
+    [[ -z $logtransfer_id ]] || active_logtransfer=1
 
     # Keep candidates beside the originals so relative Compose bind paths resolve identically.
     candidate_compose=$(mktemp "$stack/.compose-deploy.XXXXXXXX.yaml")
+    trap 'rm -f "${candidate_compose:-}" "${candidate_nomad:-}"' EXIT
     candidate_nomad=$(mktemp "$stack/configs/.nomad-deploy.XXXXXXXX.yaml")
-    trap 'rc=$?; rm -f "$candidate_compose" "$candidate_nomad"; if (( rc != 0 )); then echo "Deployment failed; inspect current state and use the runbook rollback. No automatic rollback was attempted." >&2; fi' EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
     rewrite_images compose "$compose_file" "$tag" > "$candidate_compose" || die 'Unexpected Compose image layout.'
     rewrite_images nomad "$nomad_file" "$tag" > "$candidate_nomad" || die 'Unexpected NOMAD Jupyter image layout.'
     "${dc[@]}" -f "$candidate_compose" config -q
     chmod --reference="$compose_file" "$candidate_compose"
     chmod --reference="$nomad_file" "$candidate_nomad"
 
-    # Capture the running artifacts BEFORE pulling: a tag might have been republished.
     mkdir -p "$private/deploy-backups"
     backup=$(mktemp -d "$private/deploy-backups/$(date -u +%Y%m%dT%H%M%SZ).XXXXXXXX")
     cp -p "$compose_file" "$backup/docker-compose.staging.yaml"
     cp -p "$nomad_file" "$backup/nomad.staging.yaml"
-    mapfile -t ids < <("${dc[@]}" -f "$compose_file" ps -q)
-    docker inspect -f '{{.Name}} {{.Config.Image}} {{.Image}}' "${ids[@]}" > "$backup/containers.txt"
-    for id in "${ids[@]}"; do
-        docker image inspect -f '{{.Id}} {{json .RepoDigests}}' "$(docker inspect -f '{{.Image}}' "$id")"
-    done > "$backup/image-digests.txt"
-    old_jupyter=$(awk '$1 == "image:" && $2 ~ /^ghcr.io\/glaidedata\/glaidedata-oasis\/jupyter(:|@sha256:)/ {print $2}' "$nomad_file")
-    printf 'previous_ref=%s\n' "$old_jupyter" > "$backup/jupyter-image.txt"
-    if docker image inspect -f '{{.Id}} {{json .RepoDigests}}' "$old_jupyter" >> "$backup/jupyter-image.txt" 2>/dev/null; then
-        echo 'locally_available=yes' >> "$backup/jupyter-image.txt"
-    else
-        echo 'locally_available=no' >> "$backup/jupyter-image.txt"
-        echo "WARNING: Previous Jupyter image $old_jupyter is not local; rollback requires recovering it first." >&2
-    fi
     echo "==> Deploying $tag; rollback files: $backup"
     docker pull --platform linux/amd64 "$repo:$tag"
     docker pull --platform linux/amd64 "$repo/jupyter:$tag"
-    docker image inspect -f '{{.Id}} {{json .RepoDigests}}' "$repo:$tag" "$repo/jupyter:$tag" > "$backup/requested-images.txt"
 
-    # Only image scalars change. Secret files, database services and storage are untouched.
+    # Only image scalars change; do not recreate data services or volumes.
     mv "$candidate_compose" "$compose_file"
     mv "$candidate_nomad" "$nomad_file"
     local -a up=("${dc[@]}" -f "$compose_file" up -d --no-deps --force-recreate
@@ -138,8 +111,8 @@ main() {
         "${dc[@]}" -f "$compose_file" --profile with_logtransfer up -d --no-deps --force-recreate \
             --no-build --pull never --wait --wait-timeout 600 logtransfer
     fi
-    mapfile -t ids < <("${dc[@]}" -f "$compose_file" ps --status running -q worker)
-    [[ ${#ids[@]} == 4 ]] || die 'Expected four running workers after deployment.'
+    [[ $("${dc[@]}" -f "$compose_file" ps --status running -q worker | wc -l) == 4 ]] ||
+        die 'Expected four running workers after deployment.'
     "${dc[@]}" -f "$compose_file" exec -T proxy nginx -t
     "${dc[@]}" -f "$compose_file" exec -T proxy nginx -s reload
     for path in alive gui/; do
