@@ -15,6 +15,14 @@ on:
         type: string
   workflow_dispatch:
     inputs:
+      target:
+        description: "Deployment target (netcup is manual-only during migration)"
+        required: true
+        default: hetzner
+        type: choice
+        options:
+          - hetzner
+          - netcup
       mode:
         description: "What to deploy"
         required: true
@@ -41,10 +49,11 @@ jobs:
   deploy:
     name: Resolve image + deploy to VM
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.target == 'netcup' && 45 || 15 }}
     environment:
-      name: glaidedata-oasis-prod
+      name: ${{ inputs.target == 'netcup' && 'glaidedata-oasis-netcup-staging' || 'glaidedata-oasis-prod' }}
     env:
+      INPUT_TARGET: ${{ inputs.target || 'hetzner' }}
       PACKAGE_NAME: ${{ github.event.repository.name }}
       INPUT_MODE: ${{ inputs.mode || 'auto' }}
       INPUT_TAG: ${{ inputs.tag || '' }}
@@ -55,6 +64,27 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
+            if (process.env.INPUT_TARGET === 'netcup') {
+              if (context.eventName !== 'workflow_dispatch' ||
+                  process.env.INPUT_MODE !== 'tag' ||
+                  !/^v\d+\.\d+\.\d+$/.test(process.env.INPUT_TAG)) {
+                throw new Error('Netcup requires a manual dispatch with mode=tag and an explicit vX.Y.Z release.');
+              }
+              const tag = process.env.INPUT_TAG;
+              const { data: release } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner, repo: context.repo.repo, tag
+              });
+              if (release.draft || release.tag_name !== tag) {
+                throw new Error('The requested release must be published.');
+              }
+              core.setOutput('deploy_ref', tag);
+              core.setOutput('reason', 'manual-netcup-release');
+              return;
+            }
+            if (process.env.INPUT_TARGET !== 'hetzner') {
+              throw new Error('Unsupported deployment target.');
+            }
+
             const owner = context.repo.owner;
             const ownerType = context.payload.repository.owner.type;
             const packageName = process.env.PACKAGE_NAME.toLowerCase();
@@ -152,19 +182,40 @@ jobs:
             core.setOutput("reason", reason);
 
       - name: Write SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          NETCUP_KNOWN_HOSTS: ${{ secrets.NETCUP_DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          if [[ "$INPUT_TARGET" == netcup ]]; then
+            test "$DEPLOY_HOST" = 159.195.131.244
+            test -n "$NETCUP_KNOWN_HOSTS"
+            printf '%s\n' "$NETCUP_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            chmod 600 ~/.ssh/known_hosts
+          fi
 
       - name: Deploy (forced-command SSH key)
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_REF: ${{ steps.resolve.outputs.deploy_ref }}
+          DEPLOY_REASON: ${{ steps.resolve.outputs.reason }}
         run: |
           set -euo pipefail
-          echo "Deploying ref: ${{ steps.resolve.outputs.deploy_ref }} (${{ steps.resolve.outputs.reason }})"
+          echo "Deploying ref: $DEPLOY_REF ($DEPLOY_REASON)"
+          host_check=(-o StrictHostKeyChecking=accept-new)
+          if [[ "$INPUT_TARGET" == netcup ]]; then
+            [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+            host_check=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+                        -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=15)
+          fi
           ssh -i ~/.ssh/id_ed25519 \
               -o IdentitiesOnly=yes \
-              -o StrictHostKeyChecking=accept-new \
+              "${host_check[@]}" \
               -p 22 \
-              "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-              "${{ steps.resolve.outputs.deploy_ref }}"
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "$DEPLOY_REF"
