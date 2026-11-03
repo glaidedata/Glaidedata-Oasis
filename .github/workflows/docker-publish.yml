@@ -98,6 +98,9 @@ jobs:
         run: |
           # replace the yaml list with a string, use a `,` to separate the plugins
           PLUGINS_STRING=$(echo "$PLUGIN_TESTS_PLUGINS_TO_SKIP" | tr '\n' ',' | sed 's/,$//')
+          # nomad-plugin-tests uses this file to constrain each isolated plugin venv.
+          uv export --frozen --quiet --no-hashes --no-emit-project --extra plugins -o requirements.txt
+          printf '\npytest==9.1.1\n' >> requirements.txt
           uv run \
             --extra plugins \
             --with "nomad-plugin-tests" \
