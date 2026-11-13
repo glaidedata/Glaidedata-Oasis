@@ -39,6 +39,9 @@ In this README you will find instructions for:
 Below are instructions for how to deploy this NOMAD Oasis distribution
 [for a new Oasis](#for-a-new-oasis) and [for an existing Oasis](#for-an-existing-oasis)
 
+The current netcup production deployment and its server-side configuration are
+documented in [the netcup deployment runbook](docs/netcup-deployment.md).
+
 ### For a new Oasis
 
 1. Make sure you have [docker](https://docs.docker.com/engine/install/) installed.
