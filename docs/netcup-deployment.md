@@ -100,10 +100,14 @@ applied by merging this repository change.
 ## Deployment and verification
 
 Published releases deploy automatically after the build and tests pass. The
-deployment job has a 30-minute limit. The installed script must be synchronized
-and the Compose health check updated before relying on that limit. The script
+deployment job has a 90-minute limit to allow for the backup and both the old
+and new app startups. Measure a complete backup and deployment in a separately
+approved maintenance rehearsal before publishing; an Actions timeout fails the
+job but may leave the deployment script running on the server and must not be
+treated as proof of recovery. The installed script must be synchronized and the
+Compose health check updated before relying on that limit. The script
 waits up to 1200 seconds per Compose `up --wait` call; this is not a guarantee
-that the whole Actions job will finish within 30 minutes. To deploy an existing
+that the whole Actions job will finish within 90 minutes. To deploy an existing
 published image through the current manual workflow, use:
 
 ```text
@@ -111,7 +115,20 @@ mode   = tag
 tag    = v1.2.1
 ```
 
-The script saves the current Compose and NOMAD files under
+Before pulling images, the script requires no active NOMAD processing or
+running NORTH notebook containers, stops app, workers, NORTH and Temporal
+without recreating them, and writes a root-only timestamped backup under
+`/var/backups/glaide-oasis/`. It contains MongoDB and PostgreSQL logical dumps,
+NOMAD files, JupyterHub state and server-owned deployment configuration. The
+script checks archive integrity, required files, nonempty dumps and checksums,
+then restarts and verifies the original containers (worker identity and running
+state, and app and NORTH health). A backup or recovery failure blocks deployment;
+inspect the server before retrying. The
+checks are not a restore test. Test restoration only into isolated databases
+and storage, never over production. Backups are retained until an administrator
+reviews them; the script does not delete old backups.
+
+The script also saves the current Compose and NOMAD files under
 `/etc/nomad-oasis-staging/deploy-backups/`, pulls both images before changing
 either file, then recreates NORTH, four workers, and app. It leaves any stopped
 logtransfer service and its image reference unchanged. It never runs Compose

@@ -41,7 +41,7 @@ jobs:
   deploy:
     name: Resolve image + deploy to VM
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     environment:
       name: glaidedata-oasis-prod
     env:

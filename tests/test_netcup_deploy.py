@@ -6,6 +6,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+import gzip
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/deploy-oasis-netcup.sh"
@@ -44,6 +45,14 @@ MOCKS = r"""
 docker() {
     printf '%s\n' "$*" >> "$CALLS"
     case "$*" in
+        'inspect --format {{.State.Health.Status}} w'*) return 99 ;;
+        'inspect --format {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}} temporal1')
+            echo healthy ;;
+        'inspect --format {{.State.Health.Status}} '*)
+            [[ ${FAIL_HEALTH:-0} == 0 ]] && echo healthy || echo unhealthy ;;
+        'ps -q --filter name=^/nomad_oasis_north-')
+            [[ ${FAIL_SESSIONS_QUERY:-0} == 0 ]] || return 1
+            [[ ${ACTIVE_SESSIONS:-0} == 0 ]] || printf '%s\n' notebook1 ;;
         *' config --services')
             [[ ${FAIL_SERVICES_QUERY:-0} == 0 ]] || return 1
             printf '%s\n' app worker north jupyterlab_image
@@ -52,7 +61,30 @@ docker() {
         *' ps --status running -q logtransfer')
             [[ ${FAIL_LOGTRANSFER_QUERY:-0} == 0 ]] || return 1
             [[ ${ACTIVE_LOGTRANSFER:-0} == 0 ]] || printf '%s\n' logtransfer1 ;;
-        *' ps --status running -q worker') printf '%s\n' w1 w2 w3 w4 ;;
+        *' ps --status running -q app') [[ ${RUNNING_APP:-1} == 0 ]] || echo app1 ;;
+        *' ps --status running -q worker')
+            if [[ ${RUNNING_WORKER:-1} != 0 ]]; then
+                printf '%s\n' w1 w2 w3
+                [[ ${LOST_WORKER_AFTER_RESTART:-0} == 1 && ${RESTORED:-0} == 1 ]] || echo w4
+            fi ;;
+        *' ps --status running -q north') [[ ${RUNNING_NORTH:-1} == 0 ]] || echo north1 ;;
+        *' ps --status running -q temporal') [[ ${RUNNING_TEMPORAL:-1} == 0 ]] || echo temporal1 ;;
+        *' exec -T worker python -c '*|*' exec -T north python -c '*)
+            [[ ${FAIL_PROCESSING:-0} == 0 ]] || return 1 ;;
+        *' exec -T mongo mongodump --archive --gzip')
+            [[ ${FAIL_MONGO_DUMP:-0} == 0 ]] || return 1
+            cat "$MOCK_MONGO_ARCHIVE" ;;
+        *' exec -T postgresql sh -c '*)
+            [[ ${FAIL_POSTGRES_DUMP:-0} == 0 ]] || return 1
+            printf '%s\n' '-- PostgreSQL database cluster dump' ;;
+        *' stop app') RUNNING_APP=0 ;;
+        *' stop worker') RUNNING_WORKER=0 ;;
+        *' stop north') RUNNING_NORTH=0 ;;
+        *' stop temporal') RUNNING_TEMPORAL=0 ;;
+        *' start temporal') RUNNING_TEMPORAL=1 ;;
+        *' start north worker app')
+            [[ ${FAIL_RESTORE:-0} == 0 ]] || return 1
+            RUNNING_APP=1; RUNNING_WORKER=1; RUNNING_NORTH=1; RESTORED=1 ;;
         'pull '*) [[ ${FAIL_PULL:-0} == 0 || $* != *'/jupyter:'* ]] ;;
         *' up -d '*) ;;
         *' exec -T proxy nginx -t'|*' exec -T proxy nginx -s reload') ;;
@@ -64,7 +96,7 @@ stat() {
     case "$2" in
         %u) echo 0 ;;
         %u:%a) echo 0:600 ;;
-        %a) echo 644 ;;
+        %a) [[ $3 == "$BACKUP_ROOT" ]] && echo 700 || echo 644 ;;
         *) return 99 ;;
     esac
 }
@@ -123,12 +155,26 @@ class NetcupDeployTests(unittest.TestCase):
 
     def deploy(self, *, compose_content=COMPOSE, marker=True, fail_pull=False,
                fail_services_query=False, fail_logtransfer_query=False,
-               active_logtransfer=False):
+               active_logtransfer=False, active_sessions=False, fail_sessions_query=False,
+               fail_processing=False, fail_mongo_dump=False, fail_postgres_dump=False,
+               fail_restore=False,
+               lost_worker_after_restart=False):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             stack, private = base / "stack", base / "private"
             (stack / "configs").mkdir(parents=True)
             private.mkdir()
+            backup_root = base / "backups"
+            backup_root.mkdir()
+            backup_root.chmod(0o700)
+            volumes = base / "volumes"
+            (volumes / "fs").mkdir(parents=True)
+            (volumes / "fs" / "upload.txt").write_text("example upload")
+            (volumes / "jupyterhub").mkdir()
+            (volumes / "jupyterhub/jupyterhub.sqlite").write_bytes(b"sqlite fixture")
+            (volumes / "jupyterhub/jupyterhub_cookie_secret").write_bytes(b"cookie fixture")
+            mongo_archive = base / "mongo.archive.gz"
+            mongo_archive.write_bytes(gzip.compress(b"mongodump fixture"))
             compose = stack / "docker-compose.staging.yaml"
             nomad = stack / "configs/nomad.staging.yaml"
             compose.write_text(compose_content)
@@ -139,11 +185,15 @@ class NetcupDeployTests(unittest.TestCase):
                 (private / "north-state-verified").write_text(
                     "glaide_oasis_staging:north-state-persistent\n"
                 )
-            source = SCRIPT.read_text().replace(
+            source = SCRIPT.read_text().replace("attempt<120", "attempt<1").replace(
+                "sleep 10", ":"
+            ).replace(
                 "[[ $EUID == 0 ]] || die 'Run through the restricted sudo rule.'",
                 ": # root check stubbed in offline test",
             ).replace("/opt/nomad/glaide-oasis-staging", str(stack)).replace(
                 "/etc/nomad-oasis-staging", str(private)
+            ).replace("/var/backups/glaide-oasis", str(backup_root)).replace(
+                "/srv/nomad/.volumes", str(volumes)
             )
             fixture = base / "deploy.sh"
             fixture.write_text(source)
@@ -152,38 +202,50 @@ class NetcupDeployTests(unittest.TestCase):
                 ["bash", "-c", 'source "$1"\n' + MOCKS, "test", str(fixture)],
                 capture_output=True, text=True,
                 env={**os.environ, "CALLS": str(calls), "TAG": "v1.2.2",
+                     "BACKUP_ROOT": str(backup_root),
+                     "MOCK_MONGO_ARCHIVE": str(mongo_archive),
                      "FAIL_PULL": "1" if fail_pull else "0",
+                     "ACTIVE_SESSIONS": "1" if active_sessions else "0",
+                     "FAIL_SESSIONS_QUERY": "1" if fail_sessions_query else "0",
+                     "FAIL_PROCESSING": "1" if fail_processing else "0",
+                     "FAIL_MONGO_DUMP": "1" if fail_mongo_dump else "0",
+                     "FAIL_POSTGRES_DUMP": "1" if fail_postgres_dump else "0",
+                     "FAIL_RESTORE": "1" if fail_restore else "0",
+                     "LOST_WORKER_AFTER_RESTART": "1" if lost_worker_after_restart else "0",
                      "FAIL_SERVICES_QUERY": "1" if fail_services_query else "0",
                      "FAIL_LOGTRANSFER_QUERY": "1" if fail_logtransfer_query else "0",
                      "ACTIVE_LOGTRANSFER": "1" if active_logtransfer else "0",
                      "HAS_LOGTRANSFER": "1" if compose_content == COMPOSE else "0"},
             )
+            backups = list(backup_root.iterdir())
+            backup_files = set(p.name for p in backups[0].iterdir()) if backups else set()
             return (result, calls.read_text() if calls.exists() else "",
-                    compose.read_text(), nomad.read_text())
+                    compose.read_text(), nomad.read_text(), backup_files)
 
     def test_north_guard_blocks_recreation(self):
-        result, calls, compose, nomad = self.deploy(marker=False)
+        result, calls, compose, nomad, _ = self.deploy(marker=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("north-state-verified", result.stderr)
         self.assertEqual(calls, "")
         self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
 
     def test_pull_failure_keeps_active_configuration(self):
-        result, calls, compose, nomad = self.deploy(fail_pull=True)
+        result, calls, compose, nomad, backup_files = self.deploy(fail_pull=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("pull --platform linux/amd64 ghcr.io/glaidedata/glaidedata-oasis/jupyter:v1.2.2", calls)
         self.assertNotIn(" up -d ", calls)
         self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
+        self.assertIn("SHA256SUMS", backup_files)
 
     def test_unknown_logtransfer_state_blocks_deployment(self):
-        result, calls, compose, nomad = self.deploy(fail_logtransfer_query=True)
+        result, calls, compose, nomad, _ = self.deploy(fail_logtransfer_query=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Could not determine whether logtransfer is running", result.stderr)
         self.assertNotIn("pull --platform", calls)
         self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
 
     def test_unknown_service_list_blocks_deployment(self):
-        result, calls, compose, nomad = self.deploy(fail_services_query=True)
+        result, calls, compose, nomad, _ = self.deploy(fail_services_query=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Could not determine the defined Compose services", result.stderr)
         self.assertNotIn("pull --platform", calls)
@@ -192,8 +254,25 @@ class NetcupDeployTests(unittest.TestCase):
     def test_success_recreates_only_application_services(self):
         for source in (COMPOSE, NO_LOGTRANSFER_COMPOSE):
             with self.subTest(logtransfer_defined=source == COMPOSE):
-                result, calls, compose, nomad = self.deploy(compose_content=source)
+                result, calls, compose, nomad, backup_files = self.deploy(compose_content=source)
                 self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(backup_files, {
+                    "mongo.archive.gz", "postgresql.sql", "nomad-files.tar.gz",
+                    "config.tar.gz", "SHA256SUMS", "mongodump.log", "pg_dumpall.log",
+                    "files-tar.log", "config-tar.log",
+                })
+                self.assertIn("stop app", calls)
+                self.assertIn("stop worker", calls)
+                self.assertIn("stop north", calls)
+                self.assertIn("stop temporal", calls)
+                self.assertIn("start temporal", calls)
+                self.assertIn("start north worker app", calls)
+                self.assertIn("inspect --format {{.State.Health.Status}} app1", calls)
+                self.assertIn("inspect --format {{.State.Health.Status}} north1", calls)
+                self.assertNotIn("inspect --format {{.State.Health.Status}} w", calls)
+                self.assertLess(calls.index("stop temporal"), calls.index("exec -T postgresql"))
+                self.assertLess(calls.index("start temporal"), calls.index("start north worker app"))
+                self.assertLess(calls.index("start north worker app"), calls.index("pull --platform"))
                 updates = [line for line in calls.splitlines() if " up -d " in line]
                 self.assertEqual([line.split()[-1] for line in updates], ["north", "worker", "app"])
                 self.assertIn("--scale worker=4", updates[1])
@@ -213,16 +292,64 @@ class NetcupDeployTests(unittest.TestCase):
                     )
 
     def test_active_logtransfer_blocks_before_changes(self):
-        result, calls, compose, nomad = self.deploy(active_logtransfer=True)
+        result, calls, compose, nomad, _ = self.deploy(active_logtransfer=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Logtransfer is running", result.stderr)
         self.assertNotIn("pull --platform", calls)
         self.assertNotIn(" up -d ", calls)
         self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
 
-    def test_actions_deployment_job_has_30_minute_timeout(self):
+    def test_backup_failure_restores_original_services_and_blocks_pull(self):
+        result, calls, compose, nomad, _ = self.deploy(fail_mongo_dump=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("MongoDB dump failed", result.stderr)
+        self.assertIn("stop app", calls)
+        self.assertIn("stop worker", calls)
+        self.assertIn("stop north", calls)
+        self.assertIn("stop temporal", calls)
+        self.assertIn("start temporal", calls)
+        self.assertIn("start north worker app", calls)
+        self.assertNotIn("pull --platform", calls)
+        self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
+
+    def test_failed_service_recovery_blocks_deployment(self):
+        result, calls, compose, nomad, _ = self.deploy(fail_restore=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("administrator recovery required", result.stderr)
+        self.assertNotIn("pull --platform", calls)
+        self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
+
+    def test_postgresql_dump_failure_restores_temporal_and_blocks_pull(self):
+        result, calls, compose, nomad, _ = self.deploy(fail_postgres_dump=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PostgreSQL dump failed", result.stderr)
+        self.assertLess(calls.index("stop temporal"), calls.index("exec -T postgresql"))
+        self.assertLess(calls.index("exec -T postgresql"), calls.index("start temporal"))
+        self.assertNotIn("pull --platform", calls)
+        self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
+
+    def test_missing_original_worker_blocks_deployment_without_health_probe(self):
+        result, calls, compose, nomad, _ = self.deploy(lost_worker_after_restart=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("administrator recovery required", result.stderr)
+        self.assertNotIn("inspect --format {{.State.Health.Status}} w", calls)
+        self.assertNotIn("pull --platform", calls)
+        self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
+
+    def test_processing_or_north_session_blocks_backup(self):
+        for kwargs in ({"fail_processing": True}, {"active_sessions": True},
+                       {"fail_sessions_query": True}):
+            with self.subTest(kwargs=kwargs):
+                result, calls, compose, nomad, backup_files = self.deploy(**kwargs)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("stop app", calls)
+                self.assertNotIn("pull --platform", calls)
+                self.assertFalse(backup_files)
+                self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
+
+    def test_actions_deployment_job_allows_backup_and_two_startups(self):
         workflow = (SCRIPT.parents[1] / ".github/workflows/release-tag-build-and-deploy.yml").read_text()
-        self.assertEqual(re.findall(r"(?m)^    timeout-minutes: (\d+)$", workflow), ["30"])
+        self.assertEqual(re.findall(r"(?m)^    timeout-minutes: (\d+)$", workflow), ["90"])
 
 
 if __name__ == "__main__":
