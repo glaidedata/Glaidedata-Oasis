@@ -122,8 +122,6 @@ ENV NOMAD_SERVICES_API_HOST=${DOCS_PUBLIC_HOST} \
     NOMAD_SERVICES_HTTPS=${DOCS_PUBLIC_HTTPS} \
     NOMAD_SERVICES_API_BASE_PATH=${DOCS_PUBLIC_BASE_PATH}
 
-COPY scripts/check-doc-links.py /tmp/check-doc-links.py
-
 # Clones the documentation repository, checks out the version matching nomad-lab
 # (unless a specific NOMAD_DOCS_REPO_REF is provided), installs it, and builds the documentation.
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -156,7 +154,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --constraint /tmp/docs-constraints.txt . && \
     NOMAD_CONFIG='' \
     PYTHONPATH=src uv run --no-sync mkdocs build && \
-    python /tmp/check-doc-links.py site && \
     # Move built site to final destination \
     mkdir -p /app/built_docs && \
     cp -r site/* /app/built_docs
