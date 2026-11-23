@@ -112,6 +112,17 @@ WORKDIR /app
 
 ARG NOMAD_DOCS_REPO="https://github.com/FAIRmat-NFDI/nomad-docs.git"
 ARG NOMAD_DOCS_REPO_REF=""
+ARG DOCS_PUBLIC_HOST=nomad-oasis.glaidedata.com
+ARG DOCS_PUBLIC_PORT=443
+ARG DOCS_PUBLIC_HTTPS=true
+ARG DOCS_PUBLIC_BASE_PATH=/nomad-oasis
+
+ENV NOMAD_SERVICES_API_HOST=${DOCS_PUBLIC_HOST} \
+    NOMAD_SERVICES_API_PORT=${DOCS_PUBLIC_PORT} \
+    NOMAD_SERVICES_HTTPS=${DOCS_PUBLIC_HTTPS} \
+    NOMAD_SERVICES_API_BASE_PATH=${DOCS_PUBLIC_BASE_PATH}
+
+COPY scripts/check-doc-links.py /tmp/check-doc-links.py
 
 # Clones the documentation repository, checks out the version matching nomad-lab
 # (unless a specific NOMAD_DOCS_REPO_REF is provided), installs it, and builds the documentation.
@@ -119,6 +130,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     set -ex && \
+    # Keep application dependencies at the versions in the reviewed lockfile. \
+    uv export --locked --quiet --no-hashes --no-emit-project --extra plugins -o /tmp/docs-constraints.txt && \
     # Clone the documentation repository \
     echo "Cloning from: ${NOMAD_DOCS_REPO}" && \
     git clone "${NOMAD_DOCS_REPO}" docs_repo && cd docs_repo && \
@@ -135,13 +148,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             echo "Tag ${NOMAD_VERSION} found. Checking out."; \
             git checkout "${NOMAD_VERSION}"; \
         else \
-            echo "Tag ${NOMAD_VERSION} not found. Checking out main branch."; \
-            git checkout main; \
+            echo "Documentation tag ${NOMAD_VERSION} not found." >&2; \
+            exit 1; \
         fi; \
     fi && \
     # Install and build documentation \
-    uv pip install . && \
+    uv pip install --constraint /tmp/docs-constraints.txt . && \
+    NOMAD_CONFIG='' \
     PYTHONPATH=src uv run --no-sync mkdocs build && \
+    python /tmp/check-doc-links.py site && \
     # Move built site to final destination \
     mkdir -p /app/built_docs && \
     cp -r site/* /app/built_docs
