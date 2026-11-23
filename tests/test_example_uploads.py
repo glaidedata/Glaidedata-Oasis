@@ -1,5 +1,6 @@
 import os
 import time
+from importlib import resources
 
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,24 @@ if TYPE_CHECKING:
 
 
 PLUGINS_TO_SKIP = os.getenv("PLUGINS_STRING", "")
+LUQY_PLACEHOLDER_ID = "nomad_luqy_plugin.example_uploads:example_upload_entry_point"
+
+
+def is_luqy_documentation_only_example(entry_point_id: str) -> bool:
+    """Recognize the README-only example at the pinned LuQY commit.
+
+    Inspect the installed package so a later pin with data files receives the
+    normal entry and archive checks instead of inheriting this exception.
+    """
+    if entry_point_id != LUQY_PLACEHOLDER_ID:
+        return False
+    directory = resources.files("nomad_luqy_plugin").joinpath(
+        "example_uploads", "getting_started"
+    )
+    return (
+        sorted(child.name for child in directory.iterdir()) == ["README.md"]
+        and directory.joinpath("README.md").read_text().strip() == "EXAMPLE DATA"
+    )
 
 
 def get_example_upload_entrypoints() -> list["ExampleUploadEntryPoint"]:
@@ -98,6 +117,10 @@ def test_example_uploads(entry_point_id, auth):
         if page_after_value is None:
             assert len(entries) == result["pagination"]["total"]
             break
+
+    if is_luqy_documentation_only_example(entry_point_id):
+        assert not entries, "The LuQY README-only example unexpectedly produced entries"
+        return
 
     assert entries, f"Example upload {upload_id} produced no searchable entries"
     entry_ids = [entry["entry_id"] for entry in entries]
