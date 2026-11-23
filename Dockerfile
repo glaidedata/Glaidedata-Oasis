@@ -278,12 +278,19 @@ RUN apt-get update \
       # clean cache and logs
       && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* ~/.npm
 
+# COPY merges directories; remove the original Conda tree so packages removed by
+# the locked sync in jupyter_builder are not resurrected in the final image.
+RUN rm -rf /opt/conda
+
 # Switch back to jovyan to avoid accidental container runs as root
 USER ${NB_UID}
 WORKDIR "${HOME}"
 
 COPY --from=uv_image /uv /bin/uv
-COPY --from=jupyter_builder /opt/conda /opt/conda
+COPY --chown=${NB_UID}:${NB_GID} --from=jupyter_builder /opt/conda /opt/conda
+USER root
+RUN chown ${NB_UID}:${NB_GID} /opt/conda
+USER ${NB_UID}
 
 
 # Get rid ot the following message when you open a terminal in jupyterlab:

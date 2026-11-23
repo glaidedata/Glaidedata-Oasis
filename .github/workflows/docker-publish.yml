@@ -190,6 +190,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check Jupyter image dependencies
+        run: |
+          docker run --rm --network none --env UV_CACHE_DIR=/tmp/uv-cache \
+            --entrypoint /bin/uv "$JUPYTER_IMAGE" \
+            pip check --python /opt/conda/bin/python
+
       - name: Start containers and check app/jupyter container health
         working-directory: tests
         run: |

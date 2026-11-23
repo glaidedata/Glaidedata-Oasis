@@ -52,7 +52,8 @@ jupyter = [
   "jupyter-flex",
   "ipympl",
   "seaborn",
-  "jupyterlab>4.0"
+  "jupyterlab>=4.4,<4.5",
+  "ruamel-yaml<0.19"
 ]
 gpu-action = []
 cpu-action = []
