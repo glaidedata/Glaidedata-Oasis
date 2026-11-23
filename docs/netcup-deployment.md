@@ -33,6 +33,18 @@ sudo chmod 0600 /etc/nomad-oasis-staging/north-state-verified
 The marker records an administrator's verification; it is not itself proof of
 persistence. The deployment script refuses to recreate NORTH without it.
 
+## Prerequisite: review legacy logtransfer
+
+NOMAD 2.0.1 no longer provides `python -m nomad.cli admin run logtransfer`.
+Before publishing v1.3.0, an administrator must check the server-owned Compose
+file and whether its logtransfer service is running. The deployment script
+aborts before pulling images or changing configuration if logtransfer is
+running or its state cannot be determined. A defined but stopped logtransfer
+service is left unchanged; a Compose file without it is also supported. The
+script never stops, migrates, or recreates logtransfer. Any change to the
+server-owned Compose file or cleanup of the obsolete service requires separate
+administrator review and explicit approval.
+
 ## Synchronize the server script
 
 After this change is reviewed and available in an administrator's trusted
@@ -53,7 +65,8 @@ Keep the stack and private directories inaccessible to the restricted deploy
 account. Retain the existing project `glaide_oasis_staging`, Compose file
 `/opt/nomad/glaide-oasis-staging/docker-compose.staging.yaml`, NOMAD file
 `configs/nomad.staging.yaml`, and `/etc/nomad-oasis-staging/{db,nomad}.env`.
-The script expects their current unquoted image-field layout. Ensure root can
+The script expects the current unquoted app, worker, NORTH, and Jupyter image
+fields, with or without a legacy logtransfer service. Ensure root can
 read both GHCR images and that Bash, Docker Compose v2, awk, flock and curl are
 installed.
 
@@ -100,8 +113,9 @@ tag    = v1.2.1
 
 The script saves the current Compose and NOMAD files under
 `/etc/nomad-oasis-staging/deploy-backups/`, pulls both images before changing
-either file, then recreates NORTH, four workers, app, and logtransfer only if
-already active. It never runs Compose `down`, removes volumes, or prunes images.
+either file, then recreates NORTH, four workers, and app. It leaves any stopped
+logtransfer service and its image reference unchanged. It never runs Compose
+`down`, removes volumes, or prunes images.
 It validates Compose, waits for services, reloads nginx and checks the HTTPS
 alive/GUI routes. An SSH/script failure makes the Actions job fail.
 
@@ -134,9 +148,10 @@ dc=(docker compose --project-directory /opt/nomad/glaide-oasis-staging
 "${dc[@]}" exec -T proxy nginx -t && "${dc[@]}" exec -T proxy nginx -s reload
 ```
 
-If logtransfer was active, recreate it with its profile too. Test HTTPS and
-the authenticated functions again. Use the recorded prior image digests in all
-six image fields if a tag has moved; restoring YAML alone cannot undo an
+Test HTTPS and the authenticated functions again. Handle any legacy
+logtransfer restoration separately, after reviewing its old image and command.
+Use the recorded prior image digests in the app, worker, NORTH, and Jupyter
+image fields if a tag has moved; restoring YAML alone cannot undo an
 application database migration.
 Do not stop or recreate database services, remove volumes, or run Ansible's
 initial start playbook as a rollback.

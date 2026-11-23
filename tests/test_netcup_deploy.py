@@ -25,6 +25,9 @@ services:
   mongo:
     name: glaide_oasis_staging_mongo
 """
+NO_LOGTRANSFER_COMPOSE = COMPOSE.replace(
+    "  logtransfer:\n    image: ghcr.io/glaidedata/glaidedata-oasis:v1.2.1\n", ""
+)
 NOMAD = """auth:
   require_authentication: true
 plugins:
@@ -41,6 +44,10 @@ MOCKS = r"""
 docker() {
     printf '%s\n' "$*" >> "$CALLS"
     case "$*" in
+        *' config --services')
+            [[ ${FAIL_SERVICES_QUERY:-0} == 0 ]] || return 1
+            printf '%s\n' app worker north jupyterlab_image
+            [[ ${HAS_LOGTRANSFER:-0} == 0 ]] || printf '%s\n' logtransfer ;;
         *' config -q') ;;
         *' ps --status running -q logtransfer')
             [[ ${FAIL_LOGTRANSFER_QUERY:-0} == 0 ]] || return 1
@@ -66,6 +73,17 @@ main "$TAG"
 
 
 class NetcupDeployTests(unittest.TestCase):
+    @staticmethod
+    def expected_compose(source):
+        for service, suffix in [
+            ("app", ""), ("worker", ""), ("north", ""),
+            ("jupyterlab_image", "/jupyter"),
+        ]:
+            old = f"  {service}:\n    image: ghcr.io/glaidedata/glaidedata-oasis{suffix}:v1.2.1"
+            new = old.replace(":v1.2.1", ":v1.2.2")
+            source = source.replace(old, new)
+        return source
+
     def rewrite(self, kind, content):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "input.yaml"
@@ -77,11 +95,15 @@ class NetcupDeployTests(unittest.TestCase):
             )
 
     def test_only_expected_image_fields_change(self):
-        for kind, source in [("compose", COMPOSE), ("nomad", NOMAD)]:
+        for kind, source in [
+            ("compose", COMPOSE), ("compose", NO_LOGTRANSFER_COMPOSE), ("nomad", NOMAD)
+        ]:
             with self.subTest(kind=kind):
                 result = self.rewrite(kind, source)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, source.replace(":v1.2.1", ":v1.2.2"))
+                expected = (self.expected_compose(source) if kind == "compose"
+                            else source.replace(":v1.2.1", ":v1.2.2"))
+                self.assertEqual(result.stdout, expected)
 
     def test_unexpected_image_layout_is_rejected(self):
         for kind, source in [
@@ -99,7 +121,8 @@ class NetcupDeployTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Usage:", result.stderr)
 
-    def deploy(self, *, marker=True, fail_pull=False, fail_logtransfer_query=False,
+    def deploy(self, *, compose_content=COMPOSE, marker=True, fail_pull=False,
+               fail_services_query=False, fail_logtransfer_query=False,
                active_logtransfer=False):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -108,7 +131,7 @@ class NetcupDeployTests(unittest.TestCase):
             private.mkdir()
             compose = stack / "docker-compose.staging.yaml"
             nomad = stack / "configs/nomad.staging.yaml"
-            compose.write_text(COMPOSE)
+            compose.write_text(compose_content)
             nomad.write_text(NOMAD)
             for name in ["db.env", "nomad.env"]:
                 (private / name).write_text("EXISTING_SECRET=unchanged\n")
@@ -130,8 +153,10 @@ class NetcupDeployTests(unittest.TestCase):
                 capture_output=True, text=True,
                 env={**os.environ, "CALLS": str(calls), "TAG": "v1.2.2",
                      "FAIL_PULL": "1" if fail_pull else "0",
+                     "FAIL_SERVICES_QUERY": "1" if fail_services_query else "0",
                      "FAIL_LOGTRANSFER_QUERY": "1" if fail_logtransfer_query else "0",
-                     "ACTIVE_LOGTRANSFER": "1" if active_logtransfer else "0"},
+                     "ACTIVE_LOGTRANSFER": "1" if active_logtransfer else "0",
+                     "HAS_LOGTRANSFER": "1" if compose_content == COMPOSE else "0"},
             )
             return (result, calls.read_text() if calls.exists() else "",
                     compose.read_text(), nomad.read_text())
@@ -153,36 +178,47 @@ class NetcupDeployTests(unittest.TestCase):
     def test_unknown_logtransfer_state_blocks_deployment(self):
         result, calls, compose, nomad = self.deploy(fail_logtransfer_query=True)
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Could not determine whether logtransfer is running", result.stderr)
+        self.assertNotIn("pull --platform", calls)
+        self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
+
+    def test_unknown_service_list_blocks_deployment(self):
+        result, calls, compose, nomad = self.deploy(fail_services_query=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Could not determine the defined Compose services", result.stderr)
         self.assertNotIn("pull --platform", calls)
         self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
 
     def test_success_recreates_only_application_services(self):
-        result, calls, compose, nomad = self.deploy()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        updates = [line for line in calls.splitlines() if " up -d " in line]
-        self.assertEqual([line.split()[-1] for line in updates], ["north", "worker", "app"])
-        self.assertIn("--scale worker=4", updates[1])
-        self.assertTrue(all("--no-deps" in line for line in updates))
-        self.assertTrue(all("--wait --wait-timeout 1200" in line for line in updates))
-        self.assertLess(calls.index("/jupyter:v1.2.2"), calls.index(" up -d "))
-        self.assertNotIn(" down", calls)
-        self.assertNotIn("prune", calls)
-        self.assertEqual(compose, COMPOSE.replace(":v1.2.1", ":v1.2.2"))
-        self.assertEqual(nomad, NOMAD.replace(":v1.2.1", ":v1.2.2"))
+        for source in (COMPOSE, NO_LOGTRANSFER_COMPOSE):
+            with self.subTest(logtransfer_defined=source == COMPOSE):
+                result, calls, compose, nomad = self.deploy(compose_content=source)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                updates = [line for line in calls.splitlines() if " up -d " in line]
+                self.assertEqual([line.split()[-1] for line in updates], ["north", "worker", "app"])
+                self.assertIn("--scale worker=4", updates[1])
+                self.assertTrue(all("--no-deps" in line for line in updates))
+                self.assertTrue(all("--wait --wait-timeout 1200" in line for line in updates))
+                self.assertLess(calls.index("/jupyter:v1.2.2"), calls.index(" up -d "))
+                if source == NO_LOGTRANSFER_COMPOSE:
+                    self.assertNotIn("ps --status running -q logtransfer", calls)
+                self.assertNotIn(" down", calls)
+                self.assertNotIn("prune", calls)
+                self.assertEqual(compose, self.expected_compose(source))
+                self.assertEqual(nomad, NOMAD.replace(":v1.2.1", ":v1.2.2"))
+                for path in ("alive", "gui/"):
+                    self.assertIn(
+                        f"--resolve nomad-oasis.glaidedata.com:443:127.0.0.1 "
+                        f"https://nomad-oasis.glaidedata.com/nomad-oasis/{path}", calls
+                    )
 
-    def test_active_logtransfer_waits_and_smoke_checks_production_domain(self):
-        result, calls, _, _ = self.deploy(active_logtransfer=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        updates = [line for line in calls.splitlines() if " up -d " in line]
-        self.assertEqual(updates[-1].split()[-1], "logtransfer")
-        self.assertIn("--wait --wait-timeout 1200", updates[-1])
-        for path in ("alive", "gui/"):
-            self.assertIn(
-                f"--resolve nomad-oasis.glaidedata.com:443:127.0.0.1 "
-                f"https://nomad-oasis.glaidedata.com/nomad-oasis/{path}",
-                calls,
-            )
-        self.assertNotIn("nomad-oasis-test.glaidedata.com", calls)
+    def test_active_logtransfer_blocks_before_changes(self):
+        result, calls, compose, nomad = self.deploy(active_logtransfer=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Logtransfer is running", result.stderr)
+        self.assertNotIn("pull --platform", calls)
+        self.assertNotIn(" up -d ", calls)
+        self.assertEqual((compose, nomad), (COMPOSE, NOMAD))
 
     def test_actions_deployment_job_has_30_minute_timeout(self):
         workflow = (SCRIPT.parents[1] / ".github/workflows/release-tag-build-and-deploy.yml").read_text()

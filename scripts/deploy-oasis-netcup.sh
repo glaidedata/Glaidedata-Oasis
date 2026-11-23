@@ -12,7 +12,7 @@ rewrite_images() {
     awk -v kind="$kind" -v tag="$tag" '
         BEGIN {
             repo = "ghcr.io/glaidedata/glaidedata-oasis"
-            split("app worker north logtransfer jupyterlab_image", services, " ")
+            split("app worker north jupyterlab_image", services, " ")
             for (i in services) wanted[services[i]] = 1
         }
         /^[^ #]/ { section = $1 }
@@ -60,7 +60,7 @@ main() {
     local project=glaide_oasis_staging domain=nomad-oasis.glaidedata.com
     local repo=ghcr.io/glaidedata/glaidedata-oasis
     local compose_file=$stack/docker-compose.staging.yaml nomad_file=$stack/configs/nomad.staging.yaml
-    local file backup candidate_compose candidate_nomad logtransfer_id active_logtransfer=0
+    local file backup candidate_compose candidate_nomad logtransfer_id services
     local -a dc=(docker compose
         --project-directory "$stack" -p "$project" --env-file "$private/db.env")
     cd "$stack"
@@ -76,10 +76,15 @@ main() {
     done
     grep -qx 'glaide_oasis_staging:north-state-persistent' "$private/north-state-verified" ||
         die 'Verify and preserve JupyterHub state before allowing NORTH recreation.'
-    "${dc[@]}" -f "$compose_file" config -q
-    logtransfer_id=$("${dc[@]}" -f "$compose_file" ps --status running -q logtransfer) ||
-        die 'Could not determine whether logtransfer is active.'
-    [[ -z $logtransfer_id ]] || active_logtransfer=1
+    "${dc[@]}" -f "$compose_file" --profile '*' config -q
+    services=$("${dc[@]}" -f "$compose_file" --profile '*' config --services) ||
+        die 'Could not determine the defined Compose services.'
+    if grep -Fxq logtransfer <<< "$services"; then
+        logtransfer_id=$("${dc[@]}" -f "$compose_file" --profile '*' ps --status running -q logtransfer) ||
+            die 'Could not determine whether logtransfer is running.'
+        [[ -z $logtransfer_id ]] ||
+            die 'Logtransfer is running; review and handle it separately before deploying NOMAD 2.0.1.'
+    fi
 
     # Keep candidates beside the originals so relative Compose bind paths resolve identically.
     candidate_compose=$(mktemp "$stack/.compose-deploy.XXXXXXXX.yaml")
@@ -87,7 +92,7 @@ main() {
     candidate_nomad=$(mktemp "$stack/configs/.nomad-deploy.XXXXXXXX.yaml")
     rewrite_images compose "$compose_file" "$tag" > "$candidate_compose" || die 'Unexpected Compose image layout.'
     rewrite_images nomad "$nomad_file" "$tag" > "$candidate_nomad" || die 'Unexpected NOMAD Jupyter image layout.'
-    "${dc[@]}" -f "$candidate_compose" config -q
+    "${dc[@]}" -f "$candidate_compose" --profile '*' config -q
     chmod --reference="$compose_file" "$candidate_compose"
     chmod --reference="$nomad_file" "$candidate_nomad"
 
@@ -99,7 +104,7 @@ main() {
     docker pull --platform linux/amd64 "$repo:$tag"
     docker pull --platform linux/amd64 "$repo/jupyter:$tag"
 
-    # Only image scalars change; do not recreate data services or volumes.
+    # Only application and Jupyter image scalars change; do not recreate data services or volumes.
     mv "$candidate_compose" "$compose_file"
     mv "$candidate_nomad" "$nomad_file"
     local -a up=("${dc[@]}" -f "$compose_file" up -d --no-deps --force-recreate
@@ -107,10 +112,6 @@ main() {
     "${up[@]}" north
     "${up[@]}" --scale worker=4 worker
     "${up[@]}" app
-    if (( active_logtransfer )); then
-        "${dc[@]}" -f "$compose_file" --profile with_logtransfer up -d --no-deps --force-recreate \
-            --no-build --pull never --wait --wait-timeout 1200 logtransfer
-    fi
     [[ $("${dc[@]}" -f "$compose_file" ps --status running -q worker | wc -l) == 4 ]] ||
         die 'Expected four running workers after deployment.'
     "${dc[@]}" -f "$compose_file" exec -T proxy nginx -t
