@@ -9,6 +9,28 @@ running_ids() {
     "${dc[@]}" -f "$compose_file" ps --status running -q "$1" | sort
 }
 
+verify_north_mounts() {
+    local destination source actual
+    for destination in /app/jupyterhub.sqlite /app/jupyterhub_cookie_secret /app/.volumes/fs; do
+        case $destination in
+            /app/.volumes/fs) source=/srv/nomad/.volumes/fs ;;
+            *) source=/srv/nomad/.volumes/jupyterhub/${destination##*/} ;;
+        esac
+        actual=$(docker inspect --format \
+            "{{range .Mounts}}{{if eq .Destination \"$destination\"}}{{println .Source}}{{end}}{{end}}" \
+            "$original_north") || return 1
+        [[ $actual == "$source" ]] || return 1
+    done
+}
+
+nomad_services_stopped() {
+    local app_ids worker_ids north_ids
+    app_ids=$(running_ids app) || return 1
+    worker_ids=$(running_ids worker) || return 1
+    north_ids=$(running_ids north) || return 1
+    [[ -z $app_ids && -z $worker_ids && -z $north_ids ]]
+}
+
 restore_backup_services() {
     "${dc[@]}" -f "$compose_file" start temporal || return 1
     local attempt app_health north_health temporal_state=
@@ -22,6 +44,7 @@ restore_backup_services() {
         sleep 10
     done
     [[ $temporal_state == healthy || $temporal_state == running ]] || return 1
+    [[ ${1:-} == temporal_only ]] && return 0
     "${dc[@]}" -f "$compose_file" start north worker app || return 1
     for ((attempt=0; attempt<120; attempt++)); do
         if [[ $(running_ids temporal) == "$original_temporal" &&
@@ -48,6 +71,25 @@ on_exit() {
             echo 'ERROR: Backup interrupted and original services could not be verified running; administrator recovery required.' >&2
             status=1
         fi
+    elif [[ ${deployment_phase:-} == pre_cutover ]]; then
+        if ! cp -p "$backup/docker-compose.staging.yaml" "$compose_file" ||
+           ! cp -p "$backup/nomad.staging.yaml" "$nomad_file" ||
+           ! restore_backup_services; then
+            echo 'ERROR: Pre-cutover failure; original configuration or containers could not be verified. Administrator recovery required.' >&2
+        else
+            echo 'ERROR: Pre-cutover failure; original configuration and containers restored.' >&2
+        fi
+        echo "ERROR: Data backup: $data_backup; configuration backup: $backup" >&2
+        status=1
+    elif [[ ${deployment_phase:-} == post_cutover ]]; then
+        if ! "${dc[@]}" -f "$compose_file" stop app worker north ||
+           ! nomad_services_stopped; then
+            echo 'ERROR: Post-cutover failure; NOMAD services could not be verified stopped. Administrator intervention required immediately.' >&2
+        else
+            echo 'ERROR: Post-cutover failure; NOMAD app, workers and NORTH are stopped. Do not restart the old version until data migration is assessed.' >&2
+        fi
+        echo "ERROR: Data backup: $data_backup; configuration backup: $backup. Administrator recovery required." >&2
+        status=1
     fi
     rm -f "${candidate_compose:-}" "${candidate_nomad:-}"
     exit "$status"
@@ -90,6 +132,7 @@ pre_deployment_backup() {
        $(wc -l <<< "$original_north") == 1 &&
        $(wc -l <<< "$original_temporal") == 1 ]] ||
         die 'Expected one app, four workers, one NORTH and one Temporal before backup.'
+    verify_north_mounts || die 'Running NORTH mounts do not match the JupyterHub and NOMAD backup sources.'
     notebook_sessions=$(docker ps -q --filter 'name=^/nomad_oasis_north-') ||
         die 'Cannot determine running NORTH sessions.'
     [[ -z $notebook_sessions ]] || die 'NORTH sessions are running; postpone deployment.'
@@ -116,6 +159,7 @@ pre_deployment_backup() {
 
     directory=$(mktemp -d "$root/$(date -u +%Y%m%dT%H%M%SZ).XXXXXXXX") ||
         die 'Could not create backup directory.'
+    data_backup=$directory
     echo "==> Creating pre-deployment backup: $directory"
     "${dc[@]}" -f "$compose_file" exec -T mongo mongodump --archive --gzip \
         > "$directory/mongo.archive.gz" 2> "$directory/mongodump.log" ||
@@ -145,7 +189,9 @@ pre_deployment_backup() {
     tar -tzf "$directory/config.tar.gz" >/dev/null || die 'Configuration archive integrity check failed.'
     (cd "$directory" && sha256sum mongo.archive.gz postgresql.sql nomad-files.tar.gz config.tar.gz > SHA256SUMS &&
         sha256sum --check --status SHA256SUMS) || die 'Backup checksum verification failed.'
-    restore_backup_services || die 'Backup completed but original services could not be verified running.'
+    restore_backup_services temporal_only || die 'Backup completed but Temporal could not be verified running.'
+    nomad_services_stopped || die 'Old NOMAD services resumed after backup.'
+    deployment_phase=pre_cutover
     backup_services_stopped=0
     echo "==> Verified pre-deployment backup: $directory"
 }
@@ -204,10 +250,11 @@ main() {
     local tag=$1 stack=/opt/nomad/glaide-oasis-staging private=/etc/nomad-oasis-staging
     local project=glaide_oasis_staging domain=nomad-oasis.glaidedata.com
     local repo=ghcr.io/glaidedata/glaidedata-oasis
-    local compose_file=$stack/docker-compose.staging.yaml nomad_file=$stack/configs/nomad.staging.yaml
-    local file backup candidate_compose candidate_nomad logtransfer_id services
-    local original_app original_workers original_north original_temporal backup_services_stopped=0
-    local -a dc=(docker compose
+    compose_file=$stack/docker-compose.staging.yaml nomad_file=$stack/configs/nomad.staging.yaml
+    local file logtransfer_id services
+    backup= candidate_compose= candidate_nomad= data_backup= deployment_phase=
+    original_app= original_workers= original_north= original_temporal= backup_services_stopped=0
+    dc=(docker compose
         --project-directory "$stack" -p "$project" --env-file "$private/db.env")
     cd "$stack"
     exec 9>"$private/deploy.lock"
@@ -243,8 +290,6 @@ main() {
     chmod --reference="$compose_file" "$candidate_compose"
     chmod --reference="$nomad_file" "$candidate_nomad"
 
-    pre_deployment_backup
-
     mkdir -p "$private/deploy-backups"
     backup=$(mktemp -d "$private/deploy-backups/$(date -u +%Y%m%dT%H%M%SZ).XXXXXXXX")
     cp -p "$compose_file" "$backup/docker-compose.staging.yaml"
@@ -253,11 +298,18 @@ main() {
     docker pull --platform linux/amd64 "$repo:$tag"
     docker pull --platform linux/amd64 "$repo/jupyter:$tag"
 
+    pre_deployment_backup
+
+    verify_north_mounts || die 'Running NORTH mounts changed before recreation.'
+    nomad_services_stopped ||
+        die 'Old NOMAD services did not all stop before cutover.'
+
     # Only application and Jupyter image scalars change; do not recreate data services or volumes.
     mv "$candidate_compose" "$compose_file"
     mv "$candidate_nomad" "$nomad_file"
     local -a up=("${dc[@]}" -f "$compose_file" up -d --no-deps --force-recreate
         --no-build --pull never --wait --wait-timeout 1200)
+    deployment_phase=post_cutover
     "${up[@]}" north
     "${up[@]}" --scale worker=4 worker
     "${up[@]}" app
@@ -271,6 +323,7 @@ main() {
             --resolve "$domain:443:127.0.0.1" "https://$domain/nomad-oasis/$path" >/dev/null
     done
     echo "==> Done: $tag. Complete authenticated upload and NORTH smoke checks in the runbook."
+    deployment_phase=complete
     rm -f "$candidate_compose" "$candidate_nomad"
     trap - EXIT HUP INT TERM
 }

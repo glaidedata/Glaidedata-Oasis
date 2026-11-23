@@ -100,8 +100,8 @@ applied by merging this repository change.
 ## Deployment and verification
 
 Published releases deploy automatically after the build and tests pass. The
-deployment job has a 90-minute limit to allow for the backup and both the old
-and new app startups. Measure a complete backup and deployment in a separately
+deployment job has a 90-minute limit to allow for image pulls, the backup and
+the new app startup. Measure a complete backup and deployment in a separately
 approved maintenance rehearsal before publishing; an Actions timeout fails the
 job but may leave the deployment script running on the server and must not be
 treated as proof of recovery. The installed script must be synchronized and the
@@ -115,23 +115,26 @@ mode   = tag
 tag    = v1.2.1
 ```
 
-Before pulling images, the script requires no active NOMAD processing or
+After pulling both images, the script requires no active NOMAD processing or
 running NORTH notebook containers, stops app, workers, NORTH and Temporal
 without recreating them, and writes a root-only timestamped backup under
 `/var/backups/glaide-oasis/`. It contains MongoDB and PostgreSQL logical dumps,
 NOMAD files, JupyterHub state and server-owned deployment configuration. The
 script checks archive integrity, required files, nonempty dumps and checksums,
-then restarts and verifies the original containers (worker identity and running
-state, and app and NORTH health). A backup or recovery failure blocks deployment;
-inspect the server before retrying. The
+then restarts and verifies only Temporal. The old app, workers and NORTH remain
+stopped until new-version startup. On a failure before that startup, the script
+restores and verifies the original containers. A backup or recovery failure
+blocks deployment; inspect the server before retrying. The
 checks are not a restore test. Test restoration only into isolated databases
 and storage, never over production. Backups are retained until an administrator
 reviews them; the script does not delete old backups.
 
 The script also saves the current Compose and NOMAD files under
-`/etc/nomad-oasis-staging/deploy-backups/`, pulls both images before changing
-either file, then recreates NORTH, four workers, and app. It leaves any stopped
-logtransfer service and its image reference unchanged. It never runs Compose
+`/etc/nomad-oasis-staging/deploy-backups/` before maintenance. It verifies the
+running NORTH mounts match the backed-up JupyterHub and NOMAD paths and confirms
+the old app, workers and NORTH are stopped before starting any new-version
+service. It recreates NORTH, four workers, and app. It leaves any
+stopped logtransfer service and its image reference unchanged. It never runs Compose
 `down`, removes volumes, or prunes images.
 It validates Compose, waits for services, reloads nginx and checks the HTTPS
 alive/GUI routes. An SSH/script failure makes the Actions job fail.
@@ -145,9 +148,30 @@ work. Existing notebook containers do not switch images automatically.
 
 ## Rollback
 
-If deployment or checks fail, inspect the host before retrying. The script
-does not attempt automatic rollback. In a root shell, set `backup` to the
-printed directory and hold the deployment lock while restoring configuration:
+If deployment or checks fail, inspect the host before retrying. For failures
+after backup, the error identifies the data backup under
+`/var/backups/glaide-oasis/` and the saved configuration under
+`/etc/nomad-oasis-staging/deploy-backups/`.
+
+- **Before any new-version service starts:** the script restores the saved
+  configuration and starts the original container identities. Verify its
+  recovery message and service health; if verification failed, recover manually
+  before retrying.
+- **After a new-version service may have started, with no data migration
+  confirmed:** the script stops app, workers and NORTH, but does not start old
+  containers. Confirm all writers are stopped, inspect logs and database state,
+  then restore the saved configuration and previous images under a maintenance
+  window. Start the old services only after confirming their data compatibility.
+- **After a possible database or data migration:** keep NOMAD writers stopped.
+  Assess the migration and test recovery using isolated copies. If old-version
+  compatibility cannot be established, restoring the full pre-deployment MongoDB,
+  PostgreSQL, NOMAD files and JupyterHub state may be required as one consistent
+  set. An administrator must approve and perform any production restore; the
+  script never restores databases automatically.
+
+The following manual configuration and image rollback applies only after the
+data-compatibility decision above. In a root shell, set `backup` to the printed
+configuration-backup directory and hold the deployment lock:
 
 ```bash
 exec 9>/etc/nomad-oasis-staging/deploy.lock
