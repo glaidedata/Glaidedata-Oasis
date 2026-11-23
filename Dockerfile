@@ -5,7 +5,7 @@
 # https://docs.docker.com/engine/reference/builder/
 
 ARG PYTHON_VERSION=3.12
-ARG UV_VERSION=0.7
+ARG UV_VERSION=0.12.10
 ARG JUPYTER_VERSION=2025-04-14
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv_image
@@ -18,7 +18,7 @@ ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
     UV_LINK_MODE=copy \
-    UV_FROZEN=1 \
+    UV_LOCKED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 # Create a non-privileged user.
@@ -203,7 +203,7 @@ COPY --chown=nomad:${UID} --from=gpu_action_builder /opt/venv /opt/venv
 FROM quay.io/jupyter/base-notebook:${JUPYTER_VERSION} AS jupyter_builder
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/conda \
-    UV_FROZEN=1
+    UV_LOCKED=1
 
 # Fix: https://github.com/hadolint/hadolint/wiki/DL4006
 # Fix: https://github.com/koalaman/shellcheck/wiki/SC3014
