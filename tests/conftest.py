@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 def auth():
     from nomad.client import Auth
 
-    return Auth(user=config.client.user, password=config.client.password, from_api=True)
+    return Auth(
+        user=config.client.user,
+        password=config.client.password.get_secret_value(),
+        from_api=True,
+    )
 
 
 def make_request_with_retry(

@@ -5,7 +5,7 @@
 # https://docs.docker.com/engine/reference/builder/
 
 ARG PYTHON_VERSION=3.12
-ARG UV_VERSION=0.7
+ARG UV_VERSION=0.12.10
 ARG JUPYTER_VERSION=2025-04-14
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv_image
@@ -18,7 +18,7 @@ ENV PYTHONUNBUFFERED=1
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
     UV_LINK_MODE=copy \
-    UV_FROZEN=1 \
+    UV_LOCKED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 # Create a non-privileged user.
@@ -112,6 +112,15 @@ WORKDIR /app
 
 ARG NOMAD_DOCS_REPO="https://github.com/FAIRmat-NFDI/nomad-docs.git"
 ARG NOMAD_DOCS_REPO_REF=""
+ARG DOCS_PUBLIC_HOST=nomad-oasis.glaidedata.com
+ARG DOCS_PUBLIC_PORT=443
+ARG DOCS_PUBLIC_HTTPS=true
+ARG DOCS_PUBLIC_BASE_PATH=/nomad-oasis
+
+ENV NOMAD_SERVICES_API_HOST=${DOCS_PUBLIC_HOST} \
+    NOMAD_SERVICES_API_PORT=${DOCS_PUBLIC_PORT} \
+    NOMAD_SERVICES_HTTPS=${DOCS_PUBLIC_HTTPS} \
+    NOMAD_SERVICES_API_BASE_PATH=${DOCS_PUBLIC_BASE_PATH}
 
 # Clones the documentation repository, checks out the version matching nomad-lab
 # (unless a specific NOMAD_DOCS_REPO_REF is provided), installs it, and builds the documentation.
@@ -119,6 +128,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     set -ex && \
+    # Keep application dependencies at the versions in the reviewed lockfile. \
+    uv export --locked --quiet --no-hashes --no-emit-project --extra plugins -o /tmp/docs-constraints.txt && \
     # Clone the documentation repository \
     echo "Cloning from: ${NOMAD_DOCS_REPO}" && \
     git clone "${NOMAD_DOCS_REPO}" docs_repo && cd docs_repo && \
@@ -135,12 +146,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             echo "Tag ${NOMAD_VERSION} found. Checking out."; \
             git checkout "${NOMAD_VERSION}"; \
         else \
-            echo "Tag ${NOMAD_VERSION} not found. Checking out main branch."; \
-            git checkout main; \
+            echo "Documentation tag ${NOMAD_VERSION} not found." >&2; \
+            exit 1; \
         fi; \
     fi && \
     # Install and build documentation \
-    uv pip install . && \
+    uv pip install --constraint /tmp/docs-constraints.txt . && \
+    NOMAD_CONFIG='' \
     PYTHONPATH=src uv run --no-sync mkdocs build && \
     # Move built site to final destination \
     mkdir -p /app/built_docs && \
@@ -203,7 +215,7 @@ COPY --chown=nomad:${UID} --from=gpu_action_builder /opt/venv /opt/venv
 FROM quay.io/jupyter/base-notebook:${JUPYTER_VERSION} AS jupyter_builder
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/conda \
-    UV_FROZEN=1
+    UV_LOCKED=1
 
 # Fix: https://github.com/hadolint/hadolint/wiki/DL4006
 # Fix: https://github.com/koalaman/shellcheck/wiki/SC3014
@@ -263,12 +275,19 @@ RUN apt-get update \
       # clean cache and logs
       && rm -rf /var/lib/apt/lists/* /var/log/* /var/tmp/* ~/.npm
 
+# COPY merges directories; remove the original Conda tree so packages removed by
+# the locked sync in jupyter_builder are not resurrected in the final image.
+RUN rm -rf /opt/conda
+
 # Switch back to jovyan to avoid accidental container runs as root
 USER ${NB_UID}
 WORKDIR "${HOME}"
 
 COPY --from=uv_image /uv /bin/uv
-COPY --from=jupyter_builder /opt/conda /opt/conda
+COPY --chown=${NB_UID}:${NB_GID} --from=jupyter_builder /opt/conda /opt/conda
+USER root
+RUN chown ${NB_UID}:${NB_GID} /opt/conda
+USER ${NB_UID}
 
 
 # Get rid ot the following message when you open a terminal in jupyterlab:
